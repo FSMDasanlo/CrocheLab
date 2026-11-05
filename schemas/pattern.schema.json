@@ -1,0 +1,519 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crochelab.app/schemas/pattern.schema.json",
+  "title": "CrochéLab Pattern Document",
+  "description": "Versioned, evidence-linked data contract for a crochet pattern. It describes data; it does not infer or validate craft correctness by itself.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "projectId",
+    "garmentType",
+    "status",
+    "interpretation",
+    "sourceImages",
+    "analysis",
+    "measurements",
+    "materials",
+    "gauge",
+    "construction",
+    "corrections"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "id": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "projectId": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "garmentType": {
+      "const": "triangular-shawl"
+    },
+    "status": {
+      "enum": ["draft", "analyzed", "reviewed"]
+    },
+    "interpretation": {
+      "enum": ["reconstructed", "proposed", null],
+      "description": "Null until analysis makes an evidence-based choice between reconstruction and proposal."
+    },
+    "sourceImages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/sourceImage"
+      }
+    },
+    "analysis": {
+      "$ref": "#/$defs/analysis"
+    },
+    "measurements": {
+      "$ref": "#/$defs/measurements"
+    },
+    "materials": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/material"
+      }
+    },
+    "gauge": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/gauge"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "construction": {
+      "$ref": "#/$defs/construction"
+    },
+    "sketch": {
+      "$ref": "#/$defs/sketch"
+    },
+    "corrections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/correction"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": ["analyzed", "reviewed"]
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "interpretation": {
+            "enum": ["reconstructed", "proposed"]
+          },
+          "sourceImages": {
+            "minItems": 1
+          },
+          "construction": {
+            "properties": {
+              "rounds": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["photoId", "role", "label"],
+      "properties": {
+        "photoId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "role": {
+          "enum": ["primary", "detail"]
+        },
+        "label": {
+          "type": "string"
+        }
+      }
+    },
+    "sketch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shape", "detailRows", "selectedStitchIds"],
+      "properties": {
+        "shape": {
+          "enum": ["triangle", "semicircle", "rectangle"]
+        },
+        "detailRows": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 12
+        },
+        "selectedStitchIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "chain",
+              "slip-stitch",
+              "single-crochet",
+              "half-double-crochet",
+              "double-crochet",
+              "treble-crochet",
+              "double-treble-crochet",
+              "increase",
+              "decrease",
+              "cluster",
+              "fan",
+              "chain-space"
+            ]
+          }
+        }
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findings", "conflicts", "unknowns"],
+      "properties": {
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/conflict"
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unknown"
+          }
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "topic", "statement", "basis", "confidence", "evidencePhotoIds"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "topic": {
+          "enum": ["geometry", "stitch", "motif", "repetition", "finishing", "measurement", "other"]
+        },
+        "statement": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "basis": {
+          "enum": ["observed", "inferred"]
+        },
+        "confidence": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidencePhotoIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "uncertainty": {
+          "type": "string"
+        }
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description", "evidencePhotoIds"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "description": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "evidencePhotoIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "resolution": {
+          "type": "string"
+        }
+      }
+    },
+    "unknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "question"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "question": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "measurements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "finishedWidth", "finishedDepth"],
+      "properties": {
+        "unit": {
+          "enum": ["cm", "in"]
+        },
+        "finishedWidth": {
+          "$ref": "#/$defs/measurementValue"
+        },
+        "finishedDepth": {
+          "$ref": "#/$defs/measurementValue"
+        }
+      }
+    },
+    "measurementValue": {
+      "oneOf": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "amount", "unit"],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "amount": {
+          "oneOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "enum": ["g", "m", "yd", "skein", "unknown"]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "gauge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stitches", "rows", "width", "height", "unit"],
+      "properties": {
+        "stitches": {
+          "$ref": "#/$defs/positiveIntegerOrNull"
+        },
+        "rows": {
+          "$ref": "#/$defs/positiveIntegerOrNull"
+        },
+        "width": {
+          "$ref": "#/$defs/positiveNumberOrNull"
+        },
+        "height": {
+          "$ref": "#/$defs/positiveNumberOrNull"
+        },
+        "unit": {
+          "enum": ["cm", "in"]
+        }
+      }
+    },
+    "positiveIntegerOrNull": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "positiveNumberOrNull": {
+      "oneOf": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "construction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "rounds"],
+      "properties": {
+        "method": {
+          "enum": ["center-out", "bottom-up", "unknown"]
+        },
+        "rounds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/round"
+          }
+        }
+      }
+    },
+    "round": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "stitchCount", "instructions", "stitches", "repeats"],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "stitchCount": {
+          "$ref": "#/$defs/positiveIntegerOrNull"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "stitches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/stitch"
+          }
+        },
+        "repeats": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/repeat"
+          }
+        }
+      }
+    },
+    "stitch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "symbolId", "position", "worksInto", "notes"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "symbolId": {
+          "enum": [
+            "chain",
+            "slip-stitch",
+            "single-crochet",
+            "half-double-crochet",
+            "double-crochet",
+            "treble-crochet",
+            "double-treble-crochet",
+            "increase",
+            "decrease",
+            "cluster",
+            "fan",
+            "chain-space"
+          ]
+        },
+        "position": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y"],
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          }
+        },
+        "worksInto": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "repeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "stitchIds", "count"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "stitchIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 2
+        }
+      }
+    },
+    "correction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "at", "target", "before", "after", "reason"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "target": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "before": {
+          "type": ["object", "array", "string", "number", "boolean", "null"]
+        },
+        "after": {
+          "type": ["object", "array", "string", "number", "boolean", "null"]
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

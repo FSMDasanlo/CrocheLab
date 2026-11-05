@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f7f5f0">
+    <meta name="description" content="CrochéLab: organiza proyectos de croché y crea diagramas SVG desde datos estructurados.">
+    <title>CrochéLab — Taller de patrones</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="js/stitch-catalog.js" defer></script>
+    <script src="js/diagram-engine.js" defer></script>
+    <script src="js/firebase-config.js" defer></script>
+    <script src="js/ai-analysis.js" defer></script>
+    <script src="js/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#" aria-label="CrochéLab, inicio">
+          <span class="brand-mark" aria-hidden="true">c</span>
+          <span>Croché<span class="brand-light">Lab</span></span>
+        </a>
+
+        <div class="sidebar-label">TALLER</div>
+        <nav aria-label="Navegación principal">
+          <a class="nav-link active" href="#projects" data-view="projects" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">▦</span>
+            Mis proyectos
+          </a>
+          <a class="nav-link" href="#symbol-catalog" data-view="symbols">
+            <span class="nav-icon" aria-hidden="true">⌘</span>
+            Símbolos de croché
+          </a>
+          <a class="nav-link" href="#diagram-tool" data-view="diagram" aria-label="Boceto visual">
+            <span class="nav-icon" aria-hidden="true">◇</span>
+            Boceto visual
+          </a>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="profile-avatar" aria-hidden="true">T</div>
+          <div>
+            <strong>Mi taller</strong>
+            <span>Espacio personal</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="breadcrumb">Taller <span class="breadcrumb-separator">/</span> <span id="current-page-label">Mis proyectos</span></div>
+          <span class="local-badge"><span aria-hidden="true"></span> Guardado en este dispositivo</span>
+        </header>
+
+        <div id="projects-page">
+        <section class="page-heading">
+          <div>
+            <p class="eyebrow">TU ESPACIO CREATIVO</p>
+            <h1>Mis proyectos</h1>
+            <p class="page-intro">Reúne tus prendas, referencias e ideas en un solo lugar.</p>
+          </div>
+          <button class="button button-primary" id="new-project-button" type="button">
+            <span aria-hidden="true">＋</span> Nuevo proyecto
+          </button>
+        </section>
+
+        <section class="summary-row" aria-label="Resumen">
+          <div class="summary-card">
+            <span class="summary-icon lavender" aria-hidden="true">✳</span>
+            <div><span class="summary-label">Proyectos</span><strong id="project-count">0</strong></div>
+          </div>
+          <div class="summary-card">
+            <span class="summary-icon peach" aria-hidden="true">▧</span>
+            <div><span class="summary-label">Fotografías</span><strong id="photo-count">0</strong></div>
+          </div>
+          <div class="summary-note">
+            <span class="note-sparkle" aria-hidden="true">✦</span>
+            <p>Una buena referencia es el primer paso para crear algo único.</p>
+          </div>
+        </section>
+
+        <section class="projects-section" aria-labelledby="projects-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="projects-title">Tu biblioteca</h2>
+              <p id="project-subtitle">Tus proyectos aparecerán aquí.</p>
+            </div>
+            <label class="search-box">
+              <span aria-hidden="true">⌕</span>
+              <span class="visually-hidden">Buscar proyectos</span>
+              <input id="project-search" type="search" placeholder="Buscar proyecto…" autocomplete="off">
+            </label>
+          </div>
+
+          <div id="project-list" class="project-grid"></div>
+          <div id="empty-state" class="empty-state">
+            <div class="empty-illustration" aria-hidden="true">
+              <span class="yarn yarn-one"></span><span class="yarn yarn-two"></span>
+              <span class="needle"></span>
+            </div>
+            <h3>Tu próximo proyecto empieza aquí</h3>
+            <p>Crea un proyecto y añade una foto principal y todos los detalles que te inspiren.</p>
+            <button class="button button-secondary" id="empty-create-button" type="button">Crear mi primer proyecto</button>
+          </div>
+          <p id="no-results" class="no-results" hidden>No hay proyectos que coincidan con la búsqueda.</p>
+        </section>
+
+        <footer class="page-footer">
+          <span>CrochéLab <span aria-hidden="true">·</span> Un punto a la vez</span>
+          <span>Gestión y diagramas · Fases 1–4</span>
+        </footer>
+        </div>
+
+        <section id="symbol-catalog" class="catalog-page" aria-labelledby="catalog-title" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">BIBLIOTECA TÉCNICA</p>
+              <h1 id="catalog-title">Símbolos de croché</h1>
+              <p class="page-intro">Una referencia visual de los puntos y motivos disponibles en el motor de diagramas.</p>
+            </div>
+          </div>
+
+          <aside class="catalog-note">
+            <span aria-hidden="true">✳</span>
+            <p>La notación puede variar según la región y el patrón. Esta biblioteca es una referencia editable, no la interpretación de una fotografía.</p>
+          </aside>
+
+          <div class="catalog-toolbar">
+            <div id="symbol-filters" class="catalog-filters" role="group" aria-label="Filtrar símbolos">
+              <button class="filter-chip active" type="button" data-category="all" aria-pressed="true">Todos</button>
+              <button class="filter-chip" type="button" data-category="basic" aria-pressed="false">Puntos básicos</button>
+              <button class="filter-chip" type="button" data-category="shaping" aria-pressed="false">Aumentos y disminuciones</button>
+              <button class="filter-chip" type="button" data-category="motifs" aria-pressed="false">Motivos</button>
+            </div>
+            <label class="search-box catalog-search">
+              <span aria-hidden="true">⌕</span>
+              <span class="visually-hidden">Buscar símbolos</span>
+              <input id="symbol-search" type="search" placeholder="Buscar símbolo…" autocomplete="off">
+            </label>
+          </div>
+
+          <p id="symbol-count" class="catalog-count" aria-live="polite"></p>
+          <div id="symbol-grid" class="symbol-grid"></div>
+          <p id="symbol-empty" class="no-results" hidden>No hay símbolos que coincidan con la búsqueda.</p>
+
+          <footer class="page-footer">
+            <span>CrochéLab <span aria-hidden="true">·</span> Símbolos vectoriales SVG</span>
+            <span>Fase 2 · Catálogo inicial</span>
+          </footer>
+        </section>
+
+        <section id="diagram-tool" class="diagram-page" aria-labelledby="diagram-title" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">ESTUDIO VISUAL · PRIMERA VERSIÓN</p>
+              <h1 id="diagram-title">Boceto del esquema</h1>
+              <p class="page-intro">Revisa la foto, indica lo que reconoces y deja que CrochéLab distribuya los símbolos.</p>
+            </div>
+          </div>
+
+          <aside class="catalog-note diagram-disclaimer" id="diagram-capability-note">
+            <span aria-hidden="true">✳</span>
+            <p>La detección automática de puntos aún no está conectada. Por ahora puedes marcar los puntos que reconoces y la app generará un boceto geométrico ajustable desde tus selecciones; no será un análisis de la foto ni un patrón para tejer.</p>
+          </aside>
+
+          <div class="diagram-toolbar">
+            <label class="field diagram-project-field">
+              <span>1. Elige un proyecto</span>
+              <select id="diagram-project-select" aria-label="Proyecto para preparar el boceto">
+                <option value="">Selecciona un proyecto…</option>
+              </select>
+            </label>
+            <div class="diagram-toolbar-actions">
+              <button class="button button-secondary" id="diagram-download-button" type="button" disabled>Descargar boceto SVG</button>
+            </div>
+          </div>
+
+          <div class="diagram-layout">
+            <div class="diagram-controls">
+              <section class="panel-card reference-panel" aria-labelledby="reference-title">
+                <div class="panel-heading">
+                  <div>
+                    <h2 id="reference-title">Foto de referencia</h2>
+                    <p>Consulta la vista general y los detalles del tejido.</p>
+                  </div>
+                </div>
+                <div id="diagram-photo-viewer" class="diagram-photo-viewer">
+                  <div class="diagram-placeholder"><span aria-hidden="true">▧</span><p>Elige un proyecto para ver sus fotografías.</p></div>
+                </div>
+                <div id="diagram-photo-strip" class="diagram-photo-strip" aria-label="Fotografías del proyecto"></div>
+              </section>
+
+              <section class="panel-card diagram-setup" aria-labelledby="diagram-setup-title">
+                <div class="panel-heading">
+                  <div>
+                    <h2 id="diagram-setup-title">Ajusta el boceto</h2>
+                    <p>Selecciona las características que aprecias en la prenda.</p>
+                  </div>
+                </div>
+                <div class="ai-analysis-box">
+                  <button class="button button-secondary" id="ai-analyze-button" type="button" disabled>Analizar fotos con IA</button>
+                  <p class="choice-hint" id="ai-analysis-status">Elige un proyecto con fotografías.</p>
+                  <div id="ai-analysis-result" class="ai-analysis-result" aria-live="polite"></div>
+                </div>
+                <fieldset class="visual-choice-group">
+                  <legend><span class="step-number">2</span> ¿Qué forma tiene?</legend>
+                  <div id="shape-choices" class="shape-choices">
+                    <label class="shape-choice">
+                      <input type="radio" name="sketch-shape" value="triangle" checked>
+                      <span class="shape-choice-art shape-triangle" aria-hidden="true"></span>
+                      <span>Triangular</span>
+                    </label>
+                    <label class="shape-choice">
+                      <input type="radio" name="sketch-shape" value="semicircle">
+                      <span class="shape-choice-art shape-semicircle" aria-hidden="true"></span>
+                      <span>Semicircular</span>
+                    </label>
+                    <label class="shape-choice">
+                      <input type="radio" name="sketch-shape" value="rectangle">
+                      <span class="shape-choice-art shape-rectangle" aria-hidden="true"></span>
+                      <span>Rectangular</span>
+                    </label>
+                  </div>
+                </fieldset>
+
+                <fieldset class="visual-choice-group stitch-choice-group">
+                  <legend><span class="step-number">3</span> ¿Qué puntos reconoces?</legend>
+                  <p class="choice-hint">Puedes marcar varios. La IA, si está conectada, propone una selección que puedes corregir.</p>
+                  <div id="sketch-stitch-choices" class="sketch-stitch-choices"></div>
+                </fieldset>
+
+                <label class="range-control" for="sketch-rows">
+                  <span><span class="step-number">4</span> Nivel de detalle</span>
+                  <span class="range-value"><output id="sketch-rows-output" for="sketch-rows">6</output> filas visuales</span>
+                  <input id="sketch-rows" type="range" min="3" max="12" value="6">
+                  <span class="range-hint">Más filas muestran una distribución más detallada, no más precisión sobre la prenda.</span>
+                </label>
+
+                <div class="diagram-editor-actions">
+                  <button class="button button-primary" id="diagram-render-button" type="button" disabled>Generar boceto</button>
+                  <button class="button button-secondary" id="diagram-save-button" type="button" disabled>Guardar en proyecto</button>
+                </div>
+                <div id="diagram-validation" class="diagram-validation" role="status" aria-live="polite"></div>
+              </section>
+            </div>
+
+            <section class="diagram-preview panel-card" aria-labelledby="diagram-preview-title">
+              <div class="panel-heading">
+                <div>
+                  <h2 id="diagram-preview-title">Visualización del esquema</h2>
+                  <p id="diagram-preview-caption">Elige un proyecto para empezar el boceto.</p>
+                </div>
+                <span id="diagram-round-count" class="diagram-round-count"></span>
+              </div>
+              <div id="diagram-canvas" class="diagram-canvas">
+                <div class="diagram-placeholder">
+                  <span aria-hidden="true">◇</span>
+                  <p>Cuando generes el boceto, aquí aparecerá una distribución gráfica de la silueta y los puntos seleccionados.</p>
+                </div>
+              </div>
+              <div class="diagram-legend">
+                <span class="legend-symbol" aria-hidden="true">◇</span>
+                <span>Distribución visual orientativa · No es un patrón de tejido</span>
+              </div>
+            </section>
+          </div>
+          <footer class="page-footer">
+            <span>CrochéLab <span aria-hidden="true">·</span> Boceto visual</span>
+            <span>No verifica que el tejido sea confeccionable</span>
+          </footer>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="project-dialog" class="project-dialog" aria-labelledby="dialog-title">
+      <form id="project-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">TU PRÓXIMA CREACIÓN</p>
+            <h2 id="dialog-title">Nuevo proyecto</h2>
+          </div>
+          <button class="icon-button" id="close-dialog-button" type="button" aria-label="Cerrar">×</button>
+        </div>
+
+        <div class="form-grid">
+          <label class="field field-wide">
+            <span>Nombre del proyecto <b aria-hidden="true">*</b></span>
+            <input id="project-name" name="name" type="text" maxlength="80" placeholder="Ej. Chal de primavera" required>
+          </label>
+          <label class="field">
+            <span>Tipo de prenda</span>
+            <select id="project-garment" name="garment">
+              <option value="Chal triangular">Chal triangular</option>
+              <option value="Chal">Otro chal</option>
+              <option value="Jersey">Jersey</option>
+              <option value="Top">Top</option>
+              <option value="Chaqueta">Chaqueta</option>
+              <option value="Vestido">Vestido</option>
+              <option value="Otro">Otra prenda</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Descripción <small>Opcional</small></span>
+            <textarea id="project-description" name="description" rows="3" maxlength="500" placeholder="Notas, materiales o medidas…"></textarea>
+          </label>
+        </div>
+
+        <div class="photo-section">
+          <div class="photo-section-heading">
+            <div>
+              <h3>Fotografías de referencia <b aria-hidden="true">*</b></h3>
+              <p>La primera será la foto principal. Añade vistas y detalles del tejido.</p>
+            </div>
+          </div>
+          <label class="upload-zone" for="photo-input">
+            <span class="upload-icon" aria-hidden="true">＋</span>
+            <span><strong>Añadir fotografías</strong><small>JPG, PNG o WebP · Puedes seleccionar varias</small></span>
+            <input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+          </label>
+          <div id="photo-staging" class="photo-staging" aria-live="polite"></div>
+        </div>
+
+        <div class="dialog-actions">
+          <p class="privacy-note">Tus fotos y proyectos se guardan en este navegador.</p>
+          <div>
+            <button class="button button-quiet" id="cancel-dialog-button" type="button">Cancelar</button>
+            <button class="button button-primary" id="save-project-button" type="submit">Crear proyecto</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title">
+      <div id="project-detail"></div>
+    </dialog>
+
+    <dialog id="symbol-dialog" class="symbol-dialog" aria-labelledby="symbol-detail-title">
+      <div id="symbol-detail"></div>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

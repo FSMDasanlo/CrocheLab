@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "example-pattern-draft",
+  "projectId": "example-project",
+  "garmentType": "triangular-shawl",
+  "status": "draft",
+  "interpretation": null,
+  "sourceImages": [],
+  "analysis": {
+    "findings": [],
+    "conflicts": [],
+    "unknowns": []
+  },
+  "measurements": {
+    "unit": "cm",
+    "finishedWidth": null,
+    "finishedDepth": null
+  },
+  "materials": [],
+  "gauge": null,
+  "construction": {
+    "method": "unknown",
+    "rounds": []
+  },
+  "corrections": []
+}
