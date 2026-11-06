@@ -52,6 +52,32 @@ test("an increase contributes two output stitches", function () {
   assert.equal(engine.validate(pattern).errors.length, 0);
 });
 
+test("symbols from the reference chart render and supported stitches can be used in a sketch", function () {
+  const symbols = windowContext.CrocheLabSymbols.all();
+  const ids = symbols.map(function (symbol) { return symbol.id; });
+  const schema = JSON.parse(fs.readFileSync(path.join(root, "schemas", "pattern.schema.json"), "utf8"));
+  const schemaIds = schema.$defs.sketch.properties.selectedStitchIds.items.enum;
+  const supportedIds = symbols
+    .filter(function (symbol) { return symbol.diagramSupported !== false && symbol.id !== "repeat"; })
+    .map(function (symbol) { return symbol.id; });
+
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(Array.from(supportedIds).sort(), Array.from(schemaIds).sort());
+  symbols.forEach(function (symbol) {
+    assert.match(windowContext.CrocheLabSymbols.render(symbol.id), /<svg/);
+  });
+
+  const pattern = engine.createSketch({
+    projectId: "project-1",
+    photos: [],
+    shape: "triangle",
+    rows: 3,
+    selectedStitchIds: ["magic-ring", "front-post-double-crochet", "popcorn"]
+  });
+  assert.equal(engine.validate(pattern).errors.length, 0);
+  assert.equal(windowContext.CrocheLabSymbols.get("work-start").diagramSupported, false);
+});
+
 test("the editorial repeat marker is not accepted as a crochet stitch", function () {
   const pattern = engine.createVisualExample("project-1");
   pattern.construction.rounds[0].stitches[0].symbolId = "repeat";

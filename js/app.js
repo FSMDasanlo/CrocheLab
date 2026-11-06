@@ -224,7 +224,7 @@
 
   function renderStitchChoices() {
     const availableSymbols = symbolLibrary.all().filter(function (symbol) {
-      return symbol.id !== "repeat";
+      return symbol.diagramSupported !== false && symbol.id !== "repeat";
     });
     elements.sketchStitchChoices.innerHTML = availableSymbols.map(function (symbol) {
       return '<label class="sketch-stitch-choice"><input type="checkbox" name="sketch-stitch" value="' + escapeHtml(symbol.id) + '">' +
@@ -394,7 +394,9 @@
   function analyzeSelectedProject() {
     const project = getSelectedDiagramProject();
     if (!project || aiBusy || !aiAnalysis) return;
-    const catalog = symbolLibrary.all().filter(function (symbol) { return symbol.id !== "repeat"; });
+    const catalog = symbolLibrary.all().filter(function (symbol) {
+      return symbol.diagramSupported !== false && symbol.id !== "repeat";
+    });
     aiBusy = true;
     clearAiResult();
     elements.aiAnalyzeButton.disabled = true;
