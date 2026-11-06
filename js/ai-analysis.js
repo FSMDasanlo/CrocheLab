@@ -1,15 +1,17 @@
 (function () {
   "use strict";
 
-  const FIREBASE_VERSION = "12.0.0";
+  const GEMINI_MODEL = "gemini-flash-latest";
   const MAX_PHOTOS = 4;
   const MAX_IMAGE_SIDE = 1280;
+  const ANALYSIS_TIMEOUT_MS = 90000;
+  const MAX_GEMINI_ATTEMPTS = 3;
   const SHAPES = ["triangle", "semicircle", "rectangle"];
   const CONFIDENCE = ["high", "medium", "low"];
 
   function isConfigured() {
-    const config = window.CROCHELAB_FIREBASE_CONFIG;
-    return Boolean(config && config.apiKey && config.projectId && config.appId);
+    const key = window.APP_CONFIG && window.APP_CONFIG.geminiApiKey;
+    return typeof key === "string" && Boolean(key.trim()) && !key.trim().startsWith("TU_");
   }
 
   function buildPrompt(stitchCatalog) {
@@ -21,7 +23,8 @@
       "Lista únicamente los puntos que puedas ver con claridad usando exactamente estos identificadores: " + list + ".",
       "Para cada punto añade una confianza (high, medium o low) y una breve evidencia visual.",
       "Si algo no se distingue, no lo inventes: añádelo a 'uncertainties'.",
-      "No afirmes cifras de puntos o vueltas que no puedas contar en las fotos."
+      "No afirmes cifras de puntos o vueltas que no puedas contar en las fotos.",
+      'Formato: {"garment":"prenda","shape":"triangle|semicircle|rectangle|other","shapeConfidence":"high|medium|low","stitches":[{"id":"identificador","confidence":"high|medium|low","evidence":"evidencia"}],"uncertainties":["duda"]}.'
     ].join("\n");
   }
 
@@ -69,12 +72,17 @@
   function blobToInlinePart(blob) {
     return new Promise(function (resolve, reject) {
       function fromBlob(source, mimeType) {
-        const reader = new FileReader();
-        reader.onerror = function () { reject(reader.error); };
-        reader.onload = function () {
-          resolve({ inlineData: { mimeType: mimeType, data: String(reader.result).split(",")[1] } });
-        };
-        reader.readAsDataURL(source);
+        try {
+          const reader = new FileReader();
+          reader.onerror = function () { reject(reader.error || new Error("No se pudo leer una fotografía.")); };
+          reader.onabort = function () { reject(new Error("Se interrumpió la lectura de una fotografía.")); };
+          reader.onload = function () {
+            resolve({ inlineData: { mimeType: mimeType, data: String(reader.result).split(",")[1] } });
+          };
+          reader.readAsDataURL(source);
+        } catch (error) {
+          reject(error);
+        }
       }
 
       if (typeof createImageBitmap !== "function") {
@@ -87,6 +95,7 @@
         canvas.width = Math.round(bitmap.width * scale);
         canvas.height = Math.round(bitmap.height * scale);
         canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close();
         canvas.toBlob(function (jpeg) {
           if (jpeg) fromBlob(jpeg, "image/jpeg");
           else fromBlob(blob, blob.type || "image/jpeg");
@@ -95,56 +104,98 @@
     });
   }
 
-  let modelPromise = null;
-
-  function loadModel() {
-    if (modelPromise) return modelPromise;
-    const base = "https://www.gstatic.com/firebasejs/" + FIREBASE_VERSION + "/";
-    modelPromise = Promise.all([import(base + "firebase-app.js"), import(base + "firebase-ai.js")]).then(function (modules) {
-      const app = modules[0].initializeApp(window.CROCHELAB_FIREBASE_CONFIG);
-      const ai = modules[1].getAI(app, { backend: new modules[1].GoogleAIBackend() });
-      const Schema = modules[1].Schema;
-      const responseSchema = Schema.object({
-        properties: {
-          garment: Schema.string(),
-          shape: Schema.enumString({ enum: SHAPES.concat("other") }),
-          shapeConfidence: Schema.enumString({ enum: CONFIDENCE }),
-          stitches: Schema.array({
-            items: Schema.object({
-              properties: {
-                id: Schema.string(),
-                confidence: Schema.enumString({ enum: CONFIDENCE }),
-                evidence: Schema.string()
-              }
-            })
-          }),
-          uncertainties: Schema.array({ items: Schema.string() })
-        }
-      });
-      return modules[1].getGenerativeModel(ai, {
-        model: window.CROCHELAB_AI_MODEL || "gemini-2.5-flash",
-        generationConfig: { responseMimeType: "application/json", responseSchema: responseSchema, temperature: 0.2 }
-      });
-    }).catch(function (error) {
-      modelPromise = null;
-      throw error;
+  function waitForRetry(delay, signal) {
+    return new Promise(function (resolve, reject) {
+      if (signal.aborted) {
+        reject(new Error("El análisis ha caducado."));
+        return;
+      }
+      const timer = setTimeout(function () {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, delay);
+      function onAbort() {
+        clearTimeout(timer);
+        reject(new Error("El análisis ha caducado."));
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
     });
-    return modelPromise;
   }
 
-  function analyzePhotos(blobs, stitchCatalog) {
+  function requestGemini(body, signal, onProgress) {
+    function attempt(number) {
+      if (signal.aborted) return Promise.reject(new Error("El análisis ha caducado."));
+      if (onProgress) onProgress(number === 1 ? "requesting" : "retrying", number);
+      return fetch("https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": window.APP_CONFIG.geminiApiKey.trim() },
+        signal: signal,
+        body: body
+      }).catch(function (error) {
+        if (error instanceof TypeError) {
+          throw new Error("No se pudo conectar con Gemini. Comprueba tu conexión y vuelve a intentarlo.");
+        }
+        throw error;
+      }).then(function (response) {
+        if ([500, 502, 503, 504].indexOf(response.status) >= 0 && number < MAX_GEMINI_ATTEMPTS) {
+          const delay = 1000 * Math.pow(2, number - 1) * (1 + Math.random() * 0.5);
+          return waitForRetry(delay, signal).then(function () { return attempt(number + 1); });
+        }
+        return response;
+      });
+    }
+    return attempt(1);
+  }
+
+  function analyzePhotos(blobs, stitchCatalog, onProgress) {
     if (!isConfigured()) {
-      return Promise.reject(new Error("El análisis con IA no está configurado todavía."));
+      return Promise.reject(new Error("Falta la clave de Gemini en js/config.js."));
     }
     if (!blobs.length) return Promise.reject(new Error("El proyecto no tiene fotografías."));
     const validIds = stitchCatalog.map(function (stitch) { return stitch.id; });
-    return Promise.all([loadModel(), Promise.all(blobs.slice(0, MAX_PHOTOS).map(blobToInlinePart))])
-      .then(function (results) {
-        return results[0].generateContent([buildPrompt(stitchCatalog)].concat(results[1]));
+    const controller = new AbortController();
+    let timer;
+    const timeout = new Promise(function (resolve, reject) {
+      timer = setTimeout(function () {
+        reject(new Error("El análisis ha tardado demasiado. Comprueba tu conexión e inténtalo de nuevo."));
+        controller.abort();
+      }, ANALYSIS_TIMEOUT_MS);
+    });
+    const analysis = Promise.resolve().then(function () {
+      if (onProgress) onProgress("preparing");
+      return Promise.all(blobs.slice(0, MAX_PHOTOS).map(blobToInlinePart));
+    })
+      .then(function (parts) {
+        if (controller.signal.aborted) throw new Error("El análisis ha caducado.");
+        const body = JSON.stringify({
+          contents: [{ parts: [{ text: buildPrompt(stitchCatalog) }].concat(parts) }],
+          generationConfig: { temperature: 0.2, responseMimeType: "application/json" }
+        });
+        return requestGemini(body, controller.signal, onProgress);
       })
       .then(function (response) {
-        return normalizeAnalysis(JSON.parse(response.response.text()), validIds);
+        if (!response.ok) {
+          if (response.status === 429) throw new Error("Gemini ha alcanzado el límite de solicitudes. Espera un momento y vuelve a intentarlo.");
+          if ([500, 502, 503, 504].indexOf(response.status) >= 0) {
+            throw new Error("Gemini no está disponible en este momento (error " + response.status + "). Se ha intentado varias veces; vuelve a probar más tarde.");
+          }
+          if (response.status === 400 || response.status === 401 || response.status === 403) {
+            throw new Error("Gemini ha rechazado la solicitud (error " + response.status + "). Comprueba la clave y los permisos de la API.");
+          }
+          throw new Error("Gemini ha respondido con el error " + response.status + ". Inténtalo de nuevo.");
+        }
+        return response.json();
+      })
+      .then(function (data) {
+        const candidate = data.candidates && data.candidates[0];
+        const parts = candidate && candidate.content && candidate.content.parts;
+        if (!Array.isArray(parts)) {
+          throw new Error("Gemini no devolvió un análisis. Revisa si bloqueó la respuesta.");
+        }
+        const content = parts.map(function (part) { return part.text || ""; }).join("");
+        return normalizeAnalysis(JSON.parse(content), validIds);
       });
+    return Promise.race([analysis, timeout]).finally(function () { clearTimeout(timer); });
   }
 
   window.CrocheLabAI = Object.freeze({
