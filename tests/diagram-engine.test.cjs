@@ -138,3 +138,39 @@ test("a sketch rejects duplicated or malformed selected stitches", function () {
     });
   }, /tipo de punto disponible/);
 });
+
+test("a border sketch creates radiating fan motifs, base chains, and crowning picots", function () {
+  const pattern = engine.createSketch({
+    projectId: "project-1",
+    photos: [{ id: "photo-1", label: "Puntilla de 3 capuchones" }],
+    shape: "border",
+    rows: 3,
+    selectedStitchIds: ["chain", "double-crochet", "single-crochet", "picot"]
+  });
+  const result = engine.validate(pattern);
+
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.warnings.length, 0);
+  assert.equal(result.roundCount, 3);
+  assert.equal(pattern.construction.method, "bottom-up");
+  assert.equal(pattern.sketch.shape, "border");
+
+  // Round 1 (foundation) should be at the bottom (greater Y than Round 3 crown)
+  assert.ok(pattern.construction.rounds[0].stitches[0].position.y > pattern.construction.rounds[2].stitches[0].position.y);
+
+  // Round 2 (fan round) should contain stitches with radiating rotation angles
+  const fanStitches = pattern.construction.rounds[1].stitches.filter(function (s) {
+    return s.symbolId === "double-crochet" && Number.isFinite(s.rotation);
+  });
+  assert.ok(fanStitches.length >= 21); // 3 motifs * 7 double-crochets = 21 fan stitches
+  const angles = fanStitches.map(function (s) { return s.rotation; });
+  assert.ok(angles.includes(-42));
+  assert.ok(angles.includes(0));
+  assert.ok(angles.includes(42));
+
+  // Round 3 (crowning round) should contain picots at the crests
+  const picotStitches = pattern.construction.rounds[2].stitches.filter(function (s) {
+    return s.symbolId === "picot";
+  });
+  assert.equal(picotStitches.length, 3); // 3 crowning picots
+});

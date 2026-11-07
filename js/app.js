@@ -402,7 +402,7 @@
 
   function showAiProposal(proposal, catalog) {
     const names = new Map(catalog.map(function (stitch) { return [stitch.id, stitch.name]; }));
-    const shapeNames = { triangle: "triangular", semicircle: "semicircular", rectangle: "rectangular" };
+    const shapeNames = { triangle: "triangular", semicircle: "semicircular", rectangle: "rectangular", border: "puntilla / orilla" };
     const rows = [];
     rows.push("<p><strong>Prenda:</strong> " + escapeHtml(proposal.garment || "sin identificar") + "</p>");
     rows.push("<p><strong>Forma propuesta:</strong> " + (proposal.shape
@@ -507,7 +507,11 @@
       renderedPattern = pattern;
       elements.diagramCanvas.classList.add("has-crochet-chart");
       elements.diagramCanvas.innerHTML = renderedSvg;
-      elements.diagramPreviewCaption.textContent = "Diagrama triangular de muestra, compuesto con los puntos que seleccionaste. No reproduce automáticamente la foto.";
+      elements.diagramPreviewCaption.textContent = pattern.sketch && pattern.sketch.shape === "border"
+        ? "Esquema de puntilla / orilla con abanicos y picots, compuesto con los puntos seleccionados."
+        : (pattern.sketch && pattern.sketch.shape === "triangle"
+          ? "Diagrama triangular de muestra, compuesto con los puntos que seleccionaste. No reproduce automáticamente la foto."
+          : "Diagrama de muestra, compuesto con los puntos que seleccionaste. No reproduce automáticamente la foto.");
       elements.diagramRoundCount.textContent = validation.roundCount + (validation.roundCount === 1 ? " fila visual" : " filas visuales");
       elements.diagramSaveButton.disabled = false;
       elements.diagramDownloadButton.disabled = false;
