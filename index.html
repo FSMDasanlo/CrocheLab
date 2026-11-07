@@ -10,6 +10,12 @@
     <script src="js/stitch-catalog.js" defer></script>
     <script src="js/diagram-engine.js" defer></script>
     <script src="js/config.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js" defer></script>
+    <script src="js/firebase-config.js" defer></script>
+    <script src="js/firebase-service.js" defer></script>
     <script src="js/ai-analysis.js" defer></script>
     <script src="js/app.js" defer></script>
   </head>
@@ -38,18 +44,19 @@
         </nav>
 
         <div class="sidebar-bottom">
-          <div class="profile-avatar" aria-hidden="true">T</div>
-          <div>
-            <strong>Mi taller</strong>
-            <span>Espacio personal</span>
+          <div class="profile-avatar" id="user-avatar" aria-hidden="true">T</div>
+          <div class="profile-info">
+            <strong id="user-display-name">Mi taller</strong>
+            <span id="user-status-text">Espacio local</span>
           </div>
+          <button class="button button-quiet button-auth" id="auth-button" type="button">Entrar</button>
         </div>
       </aside>
 
       <main class="main-content">
         <header class="topbar">
           <div class="breadcrumb">Taller <span class="breadcrumb-separator">/</span> <span id="current-page-label">Mis proyectos</span></div>
-          <span class="local-badge"><span aria-hidden="true"></span> Guardado en este dispositivo</span>
+          <span class="local-badge" id="storage-status-badge"><span aria-hidden="true"></span> Guardado en este dispositivo</span>
         </header>
 
         <div id="projects-page">

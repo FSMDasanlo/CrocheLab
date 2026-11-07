@@ -8,8 +8,14 @@
   const symbolLibrary = window.CrocheLabSymbols;
   const diagramEngine = window.CrocheLabDiagram;
   const aiAnalysis = window.CrocheLabAI;
+  const firebaseService = window.CrocheLabFirebase;
   let aiBusy = false;
   const elements = {
+    authButton: document.getElementById("auth-button"),
+    userAvatar: document.getElementById("user-avatar"),
+    userDisplayName: document.getElementById("user-display-name"),
+    userStatusText: document.getElementById("user-status-text"),
+    storageStatusBadge: document.getElementById("storage-status-badge"),
     aiAnalyzeButton: document.getElementById("ai-analyze-button"),
     aiAnalysisStatus: document.getElementById("ai-analysis-status"),
     aiAnalysisResult: document.getElementById("ai-analysis-result"),
@@ -100,15 +106,23 @@
   }
 
   function getAllProjects() {
+    if (firebaseService && firebaseService.isCloudActive()) {
+      return firebaseService.getAllProjects(firebaseService.getCurrentUser().uid);
+    }
     return new Promise(function (resolve, reject) {
+      if (!database) { resolve([]); return; }
       const request = database.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).getAll();
-      request.onsuccess = function () { resolve(request.result); };
+      request.onsuccess = function () { resolve(request.result || []); };
       request.onerror = function () { reject(request.error); };
     });
   }
 
   function saveProject(project) {
+    if (firebaseService && firebaseService.isCloudActive()) {
+      return firebaseService.saveProject(firebaseService.getCurrentUser().uid, project);
+    }
     return new Promise(function (resolve, reject) {
+      if (!database) { reject(new Error("Base de datos local no disponible.")); return; }
       const transaction = database.transaction(STORE_NAME, "readwrite");
       transaction.objectStore(STORE_NAME).put(project);
       transaction.oncomplete = function () { resolve(); };
@@ -117,8 +131,12 @@
     });
   }
 
-  function deleteProject(projectId) {
+  function deleteProject(projectId, projectPhotos) {
+    if (firebaseService && firebaseService.isCloudActive()) {
+      return firebaseService.deleteProject(firebaseService.getCurrentUser().uid, projectId, projectPhotos);
+    }
     return new Promise(function (resolve, reject) {
+      if (!database) { reject(new Error("Base de datos local no disponible.")); return; }
       const transaction = database.transaction([STORE_NAME, PATTERN_STORE_NAME], "readwrite");
       transaction.objectStore(STORE_NAME).delete(projectId);
       transaction.objectStore(PATTERN_STORE_NAME).delete("pattern-" + projectId);
@@ -129,7 +147,11 @@
   }
 
   function getPattern(patternId) {
+    if (firebaseService && firebaseService.isCloudActive()) {
+      return firebaseService.getPattern(firebaseService.getCurrentUser().uid, patternId);
+    }
     return new Promise(function (resolve, reject) {
+      if (!database) { resolve(null); return; }
       const request = database.transaction(PATTERN_STORE_NAME, "readonly").objectStore(PATTERN_STORE_NAME).get(patternId);
       request.onsuccess = function () { resolve(request.result || null); };
       request.onerror = function () { reject(request.error || new Error("No se pudo leer el patrón.")); };
@@ -137,7 +159,11 @@
   }
 
   function savePattern(pattern) {
+    if (firebaseService && firebaseService.isCloudActive()) {
+      return firebaseService.savePattern(firebaseService.getCurrentUser().uid, pattern);
+    }
     return new Promise(function (resolve, reject) {
+      if (!database) { reject(new Error("Base de datos local no disponible.")); return; }
       const transaction = database.transaction(PATTERN_STORE_NAME, "readwrite");
       transaction.objectStore(PATTERN_STORE_NAME).put(pattern);
       transaction.oncomplete = function () { resolve(); };
@@ -252,8 +278,13 @@
     selectedDiagramPhotoId = selected.id;
     const urls = new Map();
     project.photos.forEach(function (photo) {
-      const url = URL.createObjectURL(photo.blob);
-      diagramPhotoUrls.push(url);
+      let url = "";
+      if (photo.downloadUrl) {
+        url = photo.downloadUrl;
+      } else if (photo.blob) {
+        url = URL.createObjectURL(photo.blob);
+        diagramPhotoUrls.push(url);
+      }
       urls.set(photo.id, url);
     });
     elements.diagramPhotoViewer.innerHTML = '<img src="' + urls.get(selected.id) + '" alt="' + escapeHtml(selected.label || selected.name || "Foto principal del proyecto") + '">' +
@@ -402,14 +433,25 @@
     clearAiResult();
     elements.aiAnalyzeButton.disabled = true;
     elements.aiAnalysisStatus.textContent = "Preparando fotografías…";
-    aiAnalysis.analyzePhotos(project.photos.map(function (photo) { return photo.blob; }), catalog, function (phase, attempt) {
-      if (getSelectedDiagramProject() === project) {
-        if (phase === "requesting") {
-          elements.aiAnalysisStatus.textContent = "Analizando fotografías con Gemini…";
-        } else if (phase === "retrying") {
-          elements.aiAnalysisStatus.textContent = "Gemini no estaba disponible; reintentando (" + attempt + " de 3)…";
-        }
+
+    const blobPromises = project.photos.map(function (photo) {
+      if (photo.blob instanceof Blob) return Promise.resolve(photo.blob);
+      if (firebaseService && photo.downloadUrl) {
+        return firebaseService.ensurePhotoBlob(photo);
       }
+      return Promise.reject(new Error("No se pudo obtener la imagen de una fotografía."));
+    });
+
+    Promise.all(blobPromises).then(function (blobs) {
+      return aiAnalysis.analyzePhotos(blobs, catalog, function (phase, attempt) {
+        if (getSelectedDiagramProject() === project) {
+          if (phase === "requesting") {
+            elements.aiAnalysisStatus.textContent = "Analizando fotografías con Gemini…";
+          } else if (phase === "retrying") {
+            elements.aiAnalysisStatus.textContent = "Gemini no estaba disponible; reintentando (" + attempt + " de 3)…";
+          }
+        }
+      });
     }).then(function (proposal) {
       if (getSelectedDiagramProject() !== project) return;
       showAiProposal(proposal, catalog);
@@ -532,7 +574,7 @@
 
     elements.projectList.innerHTML = filteredProjects.map(function (project) {
       const primaryPhoto = project.photos[0];
-      const imageUrl = createObjectUrl(primaryPhoto.blob);
+      const imageUrl = primaryPhoto ? (primaryPhoto.downloadUrl || (primaryPhoto.blob ? createObjectUrl(primaryPhoto.blob) : "")) : "";
       const description = project.description || "Sin descripción";
       return '<article class="project-card">' +
         '<button class="project-cover" type="button" data-action="open" data-id="' + escapeHtml(project.id) + '" aria-label="Abrir proyecto ' + escapeHtml(project.name) + '">' +
@@ -602,12 +644,15 @@
     elements.dialogTitle.textContent = "Editar proyecto";
     elements.saveButton.textContent = "Guardar cambios";
     stagedPhotos = project.photos.map(function (photo) {
+      const url = photo.downloadUrl || (photo.blob ? URL.createObjectURL(photo.blob) : "");
       return {
         id: photo.id,
         label: photo.label || photo.name || "",
         name: photo.name || photo.label || "Fotografía",
-        blob: photo.blob,
-        url: URL.createObjectURL(photo.blob),
+        blob: photo.blob || null,
+        downloadUrl: photo.downloadUrl || null,
+        storagePath: photo.storagePath || null,
+        url: url,
         isNew: false
       };
     });
@@ -619,7 +664,8 @@
   function openProjectDetail(project) {
     clearDetailObjectUrls();
     const photosHtml = project.photos.map(function (photo, index) {
-      return '<figure class="detail-photo"><img src="' + createDetailObjectUrl(photo.blob) + '" alt="' + escapeHtml(photo.label || photo.name || project.name) + '">' +
+      const photoSrc = photo.downloadUrl || (photo.blob ? createDetailObjectUrl(photo.blob) : "");
+      return '<figure class="detail-photo"><img src="' + photoSrc + '" alt="' + escapeHtml(photo.label || photo.name || project.name) + '">' +
         '<figcaption><span>' + escapeHtml(photo.label || photo.name || "Fotografía") + '</span>' +
         (index === 0 ? "<span>Principal</span>" : "<span>Complementaria</span>") + '</figcaption></figure>';
     }).join("");
@@ -740,7 +786,15 @@
       createdAt: existingProject ? existingProject.createdAt : now,
       updatedAt: now,
       photos: stagedPhotos.map(function (photo) {
-        return { id: photo.id, label: photo.label.trim(), name: photo.name, blob: photo.blob, type: photo.blob.type };
+        return {
+          id: photo.id,
+          label: photo.label.trim(),
+          name: photo.name,
+          blob: photo.blob || null,
+          downloadUrl: photo.downloadUrl || null,
+          storagePath: photo.storagePath || null,
+          type: (photo.blob && photo.blob.type) || "image/jpeg"
+        };
       })
     };
 
@@ -770,7 +824,7 @@
       openEditProject(project);
     } else if (actionButton.dataset.action === "delete") {
       if (!window.confirm('¿Eliminar "' + project.name + '" y sus fotografías? Esta acción no se puede deshacer.')) return;
-      deleteProject(project.id).then(refreshProjects).then(function () {
+      deleteProject(project.id, project.photos).then(refreshProjects).then(function () {
         showToast("Proyecto eliminado.");
       }).catch(function (error) {
         console.error("No se pudo eliminar el proyecto:", error);
@@ -889,6 +943,83 @@
   }
   if (symbolLibrary) renderStitchChoices();
   updateAiControls();
+
+  function updateAuthUI(user) {
+    if (user) {
+      if (elements.userAvatar) {
+        if (user.photoURL) {
+          elements.userAvatar.innerHTML = '<img src="' + escapeHtml(user.photoURL) + '" alt="' + escapeHtml(user.displayName || "Usuario") + '">';
+        } else {
+          elements.userAvatar.innerHTML = "";
+          elements.userAvatar.textContent = (user.displayName || user.email || "U").charAt(0).toUpperCase();
+        }
+      }
+      if (elements.userDisplayName) {
+        elements.userDisplayName.textContent = user.displayName || "Mi taller";
+      }
+      if (elements.userStatusText) {
+        elements.userStatusText.textContent = user.email || "Conectado a Firestore";
+      }
+      if (elements.authButton) {
+        elements.authButton.textContent = "Salir";
+        elements.authButton.title = "Cerrar sesión de Google";
+      }
+      if (elements.storageStatusBadge) {
+        elements.storageStatusBadge.classList.add("cloud-badge");
+        elements.storageStatusBadge.innerHTML = '<span aria-hidden="true">☁</span> Guardado en Firestore';
+      }
+    } else {
+      if (elements.userAvatar) {
+        elements.userAvatar.innerHTML = "";
+        elements.userAvatar.textContent = "T";
+      }
+      if (elements.userDisplayName) {
+        elements.userDisplayName.textContent = "Mi taller";
+      }
+      if (elements.userStatusText) {
+        elements.userStatusText.textContent = "Modo local";
+      }
+      if (elements.authButton) {
+        elements.authButton.textContent = "Entrar";
+        elements.authButton.title = "Iniciar sesión con Google";
+      }
+      if (elements.storageStatusBadge) {
+        elements.storageStatusBadge.classList.remove("cloud-badge");
+        elements.storageStatusBadge.innerHTML = '<span aria-hidden="true"></span> Guardado en este dispositivo';
+      }
+    }
+  }
+
+  if (elements.authButton) {
+    elements.authButton.addEventListener("click", function () {
+      if (!firebaseService) return;
+      if (firebaseService.isCloudActive()) {
+        firebaseService.logout().then(function () {
+          showToast("Sesión cerrada.");
+        }).catch(function (error) {
+          console.error("Error al cerrar sesión:", error);
+          showToast("Error al cerrar sesión.", true);
+        });
+      } else {
+        firebaseService.loginWithGoogle().then(function () {
+          showToast("Sesión iniciada con Google.");
+        }).catch(function (error) {
+          console.error("Error al iniciar sesión con Google:", error);
+          if (error && error.code !== "auth/popup-closed-by-user") {
+            showToast("No se pudo iniciar sesión: " + (error.message || "Error"), true);
+          }
+        });
+      }
+    });
+  }
+
+  if (firebaseService) {
+    firebaseService.init();
+    firebaseService.onAuthChange(function (user) {
+      updateAuthUI(user);
+      refreshProjects();
+    });
+  }
 
   openDatabase().then(refreshProjects).catch(function (error) {
     console.error("No se pudo iniciar CrochéLab:", error);
