@@ -108,7 +108,7 @@
       if (!isObject(sketch)) {
         addError("sketch debe ser un objeto.");
       } else {
-        if (!["triangle", "semicircle", "rectangle"].includes(sketch.shape)) {
+        if (!["triangle", "semicircle", "rectangle", "border"].includes(sketch.shape)) {
           addError("La silueta del boceto no es válida.");
         }
         if (!Number.isInteger(sketch.detailRows) || sketch.detailRows < 3 || sketch.detailRows > 12) {
@@ -297,6 +297,15 @@
           }
         }
 
+        if (Object.prototype.hasOwnProperty.call(stitch, "rotation") && !Number.isFinite(stitch.rotation)) {
+          addError("rotation del punto «" + stitch.id + "» debe ser un número.");
+        }
+        if (Object.prototype.hasOwnProperty.call(stitch, "rotationOrigin")) {
+          if (!isObject(stitch.rotationOrigin) || !Number.isFinite(stitch.rotationOrigin.x) || !Number.isFinite(stitch.rotationOrigin.y)) {
+            addError("rotationOrigin del punto «" + stitch.id + "» debe ser un objeto con coordenadas x e y finitas.");
+          }
+        }
+
         if (typeof stitch.notes !== "string") addError("notes del punto «" + stitch.id + "» debe ser texto.");
         stitchById.set(stitch.id, stitch);
         stitchRoundById.set(stitch.id, expectedRoundNumber);
@@ -380,15 +389,21 @@
       viewBox: left + " " + top + " " + width + " " + height,
       role: "img",
       "aria-label": isSketch
-        ? "Boceto triangular de croché con " + result.roundCount + " filas y " + result.pointCount + " símbolos"
+        ? (pattern.sketch.shape === "border"
+          ? "Boceto de puntilla de croché con " + result.roundCount + " filas y " + result.pointCount + " símbolos"
+          : (pattern.sketch.shape === "triangle"
+            ? "Boceto triangular de croché con " + result.roundCount + " filas y " + result.pointCount + " símbolos"
+            : "Boceto de croché con " + result.roundCount + " filas y " + result.pointCount + " símbolos"))
         : "Diagrama con " + result.roundCount + " vueltas y " + result.pointCount + " puntos",
       class: "generated-diagram-svg",
       color: isSketch ? "#202020" : "#624d6d"
     });
     const title = createSvgElement("title");
-    title.textContent = isSketch && pattern.sketch.shape === "triangle"
-      ? "Punto triangular para chales"
-      : "Diagrama de croché";
+    title.textContent = isSketch && pattern.sketch.shape === "border"
+      ? "Puntilla / Borde de croché"
+      : (isSketch && pattern.sketch.shape === "triangle"
+        ? "Punto triangular para chales"
+        : "Diagrama de croché");
     svg.appendChild(title);
 
     if (isSketch) {
@@ -403,7 +418,9 @@
       });
       heading.textContent = pattern.sketch.shape === "triangle"
         ? "Punto triangular para chales"
-        : "Boceto orientativo";
+        : (pattern.sketch.shape === "border"
+          ? "Puntilla / Orilla con abanicos"
+          : "Boceto orientativo");
       svg.appendChild(heading);
 
       const legendWidth = maxX - minX + 88;
@@ -460,6 +477,15 @@
           "stroke-width": 1.5,
           class: "diagram-silhouette"
         });
+      } else if (pattern.sketch.shape === "border") {
+        outline = createSvgElement("path", {
+          d: "M " + (minX - 16) + " " + (maxY + 48) + " L " + (maxX + 48) + " " + (maxY + 48),
+          fill: "none",
+          stroke: "#292929",
+          "stroke-width": 1.5,
+          "stroke-dasharray": "6 4",
+          class: "diagram-silhouette crochet-chart-outline"
+        });
       } else {
         outline = createSvgElement("rect", {
           x: minX + 6,
@@ -494,6 +520,25 @@
               class: "diagram-chain-arch"
             }));
           });
+        });
+      }
+      if (pattern.sketch.shape === "border") {
+        const motifCenters = [360, 600, 840];
+        const lastRound = rounds[rounds.length - 1];
+        const crownY = lastRound && lastRound.stitches.length ? lastRound.stitches[0].position.y : minY;
+        const fanRound = rounds[Math.max(0, rounds.length - 2)];
+        const fanY = fanRound && fanRound.stitches.length ? fanRound.stitches[0].position.y : maxY;
+        motifCenters.forEach(function (mCenter) {
+          svg.appendChild(createSvgElement("path", {
+            d: "M " + (mCenter - 120 + 24) + " " + (fanY + 36) +
+              " Q " + mCenter + " " + (crownY + 4) +
+              " " + (mCenter + 120 + 24) + " " + (fanY + 36),
+            fill: "none",
+            stroke: "#292929",
+            "stroke-width": 1.1,
+            "stroke-dasharray": "4 4",
+            class: "diagram-fan-arch"
+          }));
         });
       }
     }
@@ -541,10 +586,16 @@
 
       round.stitches.forEach(function (stitch) {
         const source = new DOMParser().parseFromString(symbolLibrary.render(stitch.symbolId, 48), "image/svg+xml").documentElement;
+        let transformStr = isSketch
+          ? "translate(" + (stitch.position.x - 12) + " " + (stitch.position.y - 12) + ") scale(1.5)"
+          : "translate(" + stitch.position.x + " " + stitch.position.y + ")";
+        if (Number.isFinite(stitch.rotation) && stitch.rotation !== 0) {
+          const originX = stitch.rotationOrigin && Number.isFinite(stitch.rotationOrigin.x) ? stitch.rotationOrigin.x : 24;
+          const originY = stitch.rotationOrigin && Number.isFinite(stitch.rotationOrigin.y) ? stitch.rotationOrigin.y : 37;
+          transformStr += " rotate(" + stitch.rotation + " " + originX + " " + originY + ")";
+        }
         const group = createSvgElement("g", {
-          transform: isSketch
-            ? "translate(" + (stitch.position.x - 12) + " " + (stitch.position.y - 12) + ") scale(1.5)"
-            : "translate(" + stitch.position.x + " " + stitch.position.y + ")",
+          transform: transformStr,
           class: "diagram-stitch",
           "data-stitch-id": stitch.id,
           "data-round": round.number,
@@ -623,6 +674,249 @@
     return pattern;
   }
 
+  function createBorderConstruction(selectedStitchIds, rows) {
+    const hasChain = selectedStitchIds.includes("chain");
+    const hasPicot = selectedStitchIds.includes("picot") || selectedStitchIds.includes("picot-chain");
+    const hasSingle = selectedStitchIds.includes("single-crochet") || selectedStitchIds.includes("slip-stitch");
+    const tallStitch = selectedStitchIds.find(function (id) {
+      return ["double-crochet", "treble-crochet", "half-double-crochet", "double-treble-crochet", "fan"].includes(id);
+    }) || selectedStitchIds.find(function (id) { return id !== "chain"; }) || "double-crochet";
+    const baseStitch = hasChain ? "chain" : (hasSingle ? (selectedStitchIds.includes("single-crochet") ? "single-crochet" : "slip-stitch") : tallStitch);
+    const anchorStitch = hasSingle ? (selectedStitchIds.includes("single-crochet") ? "single-crochet" : "slip-stitch") : baseStitch;
+    const crownStitch = hasPicot ? (selectedStitchIds.includes("picot") ? "picot" : "picot-chain") : (hasChain ? "chain" : tallStitch);
+
+    const motifSpacing = 240;
+    const centerX = 600;
+    const motifCenters = [
+      centerX - motifSpacing,
+      centerX,
+      centerX + motifSpacing
+    ];
+
+    const legendRows = Math.ceil(selectedStitchIds.length / Math.min(3, selectedStitchIds.length));
+    const chartTop = 150 + (legendRows - 1) * 34;
+    const verticalSpacing = 68;
+    const roundData = [];
+
+    const fanRoundIndex = rows - 2;
+    const crownRoundIndex = rows - 1;
+
+    for (let rIndex = 0; rIndex < rows; rIndex += 1) {
+      const roundNumber = rIndex + 1;
+      const roundY = chartTop + (rows - 1 - rIndex) * verticalSpacing;
+      const stitches = [];
+      let stitchSeq = 1;
+
+      if (rIndex === 0) {
+        motifCenters.forEach(function (mCenter, mIndex) {
+          const leftBound = mCenter - motifSpacing / 2;
+          const rightBound = mCenter + motifSpacing / 2;
+
+          if (mIndex === 0) {
+            stitches.push({
+              id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+              symbolId: anchorStitch,
+              position: { x: leftBound, y: roundY },
+              worksInto: [],
+              notes: "Punto de anclaje inicial de la orilla."
+            });
+          }
+
+          [-75, -50, -25].forEach(function (offset) {
+            stitches.push({
+              id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+              symbolId: baseStitch,
+              position: { x: mCenter + offset, y: roundY },
+              worksInto: [],
+              notes: "Cadeneta de base de la puntilla."
+            });
+          });
+
+          stitches.push({
+            id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+            symbolId: baseStitch,
+            position: { x: mCenter, y: roundY - 6 },
+            worksInto: [],
+            notes: "Anillo / arco base del abanico " + (mIndex + 1) + "."
+          });
+
+          [25, 50, 75].forEach(function (offset) {
+            stitches.push({
+              id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+              symbolId: baseStitch,
+              position: { x: mCenter + offset, y: roundY },
+              worksInto: [],
+              notes: "Cadeneta de base de la puntilla."
+            });
+          });
+
+          stitches.push({
+            id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+            symbolId: anchorStitch,
+            position: { x: rightBound, y: roundY },
+            worksInto: [],
+            notes: "Punto bajo de unión entre festones."
+          });
+        });
+      } else if (rIndex === fanRoundIndex) {
+        const fanAngles = [-42, -28, -14, 0, 14, 28, 42];
+        motifCenters.forEach(function (mCenter, mIndex) {
+          const leftBound = mCenter - motifSpacing / 2;
+          const rightBound = mCenter + motifSpacing / 2;
+
+          if (mIndex === 0) {
+            stitches.push({
+              id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+              symbolId: anchorStitch,
+              position: { x: leftBound, y: roundY + 16 },
+              worksInto: [],
+              notes: "Punto de anclaje de la vuelta de abanicos."
+            });
+          }
+
+          fanAngles.forEach(function (angle, fIndex) {
+            stitches.push({
+              id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+              symbolId: tallStitch,
+              position: {
+                x: mCenter - 24 + (fIndex - 3) * 1.8,
+                y: roundY - 14
+              },
+              rotation: angle,
+              rotationOrigin: { x: 24, y: 37 },
+              worksInto: [],
+              notes: "Punto alto del abanico (" + angle + "°)."
+            });
+          });
+
+          stitches.push({
+            id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+            symbolId: anchorStitch,
+            position: { x: rightBound, y: roundY + 16 },
+            worksInto: [],
+            notes: "Punto bajo de separación entre abanicos."
+          });
+        });
+      } else if (rIndex === crownRoundIndex) {
+        motifCenters.forEach(function (mCenter, mIndex) {
+          const leftBound = mCenter - motifSpacing / 2;
+          const rightBound = mCenter + motifSpacing / 2;
+
+          if (mIndex === 0) {
+            stitches.push({
+              id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+              symbolId: anchorStitch,
+              position: { x: leftBound, y: roundY + 28 },
+              worksInto: [],
+              notes: "Punto de fijación del arco lateral."
+            });
+          }
+
+          stitches.push({
+            id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+            symbolId: baseStitch,
+            position: { x: mCenter - 72, y: roundY + 16 },
+            rotation: -30,
+            rotationOrigin: { x: 24, y: 24 },
+            worksInto: [],
+            notes: "Arco de cadenetas ascendente."
+          });
+          stitches.push({
+            id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+            symbolId: baseStitch,
+            position: { x: mCenter - 40, y: roundY },
+            rotation: -15,
+            rotationOrigin: { x: 24, y: 24 },
+            worksInto: [],
+            notes: "Arco de cadenetas hacia la cúspide."
+          });
+
+          stitches.push({
+            id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+            symbolId: crownStitch,
+            position: { x: mCenter - 24, y: roundY - 22 },
+            worksInto: [],
+            notes: "Picot decorativo en la coronilla del festón."
+          });
+
+          stitches.push({
+            id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+            symbolId: baseStitch,
+            position: { x: mCenter + 16, y: roundY },
+            rotation: 15,
+            rotationOrigin: { x: 24, y: 24 },
+            worksInto: [],
+            notes: "Arco de cadenetas descendente."
+          });
+          stitches.push({
+            id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+            symbolId: baseStitch,
+            position: { x: mCenter + 48, y: roundY + 16 },
+            rotation: 30,
+            rotationOrigin: { x: 24, y: 24 },
+            worksInto: [],
+            notes: "Arco de cadenetas hacia el anclaje."
+          });
+
+          stitches.push({
+            id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+            symbolId: anchorStitch,
+            position: { x: rightBound, y: roundY + 28 },
+            worksInto: [],
+            notes: "Anclaje entre festones coronados."
+          });
+        });
+      } else {
+        motifCenters.forEach(function (mCenter, mIndex) {
+          const leftBound = mCenter - motifSpacing / 2;
+          const rightBound = mCenter + motifSpacing / 2;
+
+          if (mIndex === 0) {
+            stitches.push({
+              id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+              symbolId: anchorStitch,
+              position: { x: leftBound, y: roundY },
+              worksInto: [],
+              notes: "Punto de base en hilera intermedia."
+            });
+          }
+
+          [-80, -40, 0, 40, 80].forEach(function (offset, idx) {
+            const sym = idx % 2 === 0 ? tallStitch : baseStitch;
+            stitches.push({
+              id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+              symbolId: sym,
+              position: { x: mCenter + offset, y: roundY },
+              worksInto: [],
+              notes: "Punto de red intermedia de la orilla."
+            });
+          });
+
+          stitches.push({
+            id: "sketch-r" + roundNumber + "-s" + (stitchSeq++),
+            symbolId: anchorStitch,
+            position: { x: rightBound, y: roundY },
+            worksInto: [],
+            notes: "Punto de unión de hilera intermedia."
+          });
+        });
+      }
+
+      roundData.push({
+        number: roundNumber,
+        stitchCount: null,
+        instructions: "",
+        stitches: stitches,
+        repeats: []
+      });
+    }
+
+    return {
+      method: "bottom-up",
+      rounds: roundData
+    };
+  }
+
   function createSketch(options) {
     const shape = options && options.shape;
     const rows = options && options.rows;
@@ -635,7 +929,7 @@
     if (!Array.isArray(photos)) {
       throw new Error("El proyecto debe incluir una lista de fotografías.");
     }
-    if (!["triangle", "semicircle", "rectangle"].includes(shape)) {
+    if (!["triangle", "semicircle", "rectangle", "border"].includes(shape)) {
       throw new Error("Selecciona una silueta válida.");
     }
     if (!Number.isInteger(rows) || rows < 3 || rows > 12) {
@@ -660,6 +954,11 @@
         label: photo.label || photo.name || ""
       };
     });
+
+    if (shape === "border") {
+      pattern.construction = createBorderConstruction(selectedStitchIds, rows);
+      return pattern;
+    }
 
     const roundData = [];
     const stitchTypes = selectedStitchIds.filter(function (id) { return id !== "chain"; });

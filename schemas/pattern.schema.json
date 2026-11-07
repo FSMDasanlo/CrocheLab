@@ -137,7 +137,7 @@
       "required": ["shape", "detailRows", "selectedStitchIds"],
       "properties": {
         "shape": {
-          "enum": ["triangle", "semicircle", "rectangle"]
+          "enum": ["triangle", "semicircle", "rectangle", "border"]
         },
         "detailRows": {
           "type": "integer",
@@ -488,6 +488,21 @@
           "uniqueItems": true,
           "items": {
             "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "rotation": {
+          "type": "number"
+        },
+        "rotationOrigin": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
           }
         },
         "notes": {

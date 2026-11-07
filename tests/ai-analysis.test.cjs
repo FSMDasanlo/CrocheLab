@@ -242,6 +242,24 @@ test("normalizeAnalysis tolerates garbage input", function () {
   assert.equal(result.shape, null);
 });
 
+test("normalizeAnalysis accepts border shape for edgings and puntillas", function () {
+  const result = ai.normalizeAnalysis({
+    garment: "Puntilla de 3 capuchones",
+    shape: "border",
+    shapeConfidence: "high",
+    stitches: [
+      { id: "chain", confidence: "high", evidence: "arcos de cadeneta" },
+      { id: "double-crochet", confidence: "high", evidence: "abanicos de varetas" },
+      { id: "picot", confidence: "high", evidence: "picots en la cúspide" }
+    ],
+    uncertainties: []
+  }, ["chain", "double-crochet", "picot"]);
+
+  assert.equal(result.shape, "border");
+  assert.equal(result.shapeConfidence, "high");
+  assert.equal(result.stitches.length, 3);
+});
+
 test("uses custom geminiModel from APP_CONFIG when provided", async function () {
   windowContext.APP_CONFIG = { geminiApiKey: "test-key", geminiModel: "gemini-3.5-flash-lite" };
   let requestedUrl = "";

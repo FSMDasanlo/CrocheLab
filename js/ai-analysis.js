@@ -6,7 +6,7 @@
   const MAX_IMAGE_SIDE = 1280;
   const ANALYSIS_TIMEOUT_MS = 90000;
   const MAX_GEMINI_ATTEMPTS = 3;
-  const SHAPES = ["triangle", "semicircle", "rectangle"];
+  const SHAPES = ["triangle", "semicircle", "rectangle", "border"];
   const CONFIDENCE = ["high", "medium", "low"];
 
   function getGeminiModel() {
@@ -22,14 +22,21 @@
   function buildPrompt(stitchCatalog) {
     const list = stitchCatalog.map(function (stitch) { return stitch.id + " (" + stitch.name + ")"; }).join(", ");
     return [
-      "Eres un experto en ganchillo. Analiza las fotografías de una misma prenda o pieza de ganchillo.",
+      "Eres un experto en ganchillo y lectura de diagramas técnicos de croché.",
+      "Analiza las fotografías de una misma prenda, muestra o pieza de ganchillo.",
       "Responde solo con el JSON pedido, en español.",
-      "Indica el tipo de prenda y la silueta que mejor la describe: triangle, semicircle, rectangle u other.",
-      "Lista únicamente los puntos que puedas ver con claridad usando exactamente estos identificadores: " + list + ".",
+      "Determina la silueta o tipo de pieza que mejor la describe:",
+      "- 'border': si es una puntilla, orilla, cenefa, borde o motivo festoneado con abanicos/ondas.",
+      "- 'triangle': si es un chal triangular o pieza en pico.",
+      "- 'semicircle': si es un chal semicircular o en media luna.",
+      "- 'rectangle': si es un chal rectangular, bufanda o manta recta.",
+      "- 'other': si tiene otra forma no clasificable en las anteriores.",
+      "Lista únicamente los puntos del catálogo que puedas ver con claridad usando exactamente estos identificadores: " + list + ".",
+      "Presta especial atención si identificas abanicos (fan), puntos altos (double-crochet), cadenetas (chain), puntos bajos (single-crochet) o picots (picot).",
       "Para cada punto añade una confianza (high, medium o low) y una breve evidencia visual.",
       "Si algo no se distingue, no lo inventes: añádelo a 'uncertainties'.",
       "No afirmes cifras de puntos o vueltas que no puedas contar en las fotos.",
-      'Formato: {"garment":"prenda","shape":"triangle|semicircle|rectangle|other","shapeConfidence":"high|medium|low","stitches":[{"id":"identificador","confidence":"high|medium|low","evidence":"evidencia"}],"uncertainties":["duda"]}.'
+      'Formato: {"garment":"prenda o pieza","shape":"triangle|semicircle|rectangle|border|other","shapeConfidence":"high|medium|low","stitches":[{"id":"identificador","confidence":"high|medium|low","evidence":"evidencia"}],"uncertainties":["duda"]}.'
     ].join("\n");
   }
 
