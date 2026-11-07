@@ -281,6 +281,7 @@
       resetDiagramPreview();
       updateSketchControls();
     }
+    updateAiControls();
   }
 
   function resetDiagramPreview() {
@@ -355,7 +356,7 @@
     const configured = Boolean(aiAnalysis && aiAnalysis.isConfigured());
     elements.aiAnalyzeButton.disabled = !configured || !project || !project.photos.length || aiBusy;
     if (!configured) {
-      elements.aiAnalysisStatus.textContent = "Análisis con IA no conectado todavía: rellena js/firebase-config.js. Mientras tanto, elige forma y puntos a mano.";
+      elements.aiAnalysisStatus.textContent = "Análisis con IA no conectado: configura la clave de Gemini en js/config.js. Mientras tanto, elige forma y puntos a mano.";
     } else if (!project) {
       elements.aiAnalysisStatus.textContent = "Elige un proyecto con fotografías.";
     } else if (!aiBusy) {
@@ -400,8 +401,16 @@
     aiBusy = true;
     clearAiResult();
     elements.aiAnalyzeButton.disabled = true;
-    elements.aiAnalysisStatus.textContent = "Analizando fotografías…";
-    aiAnalysis.analyzePhotos(project.photos.map(function (photo) { return photo.blob; }), catalog).then(function (proposal) {
+    elements.aiAnalysisStatus.textContent = "Preparando fotografías…";
+    aiAnalysis.analyzePhotos(project.photos.map(function (photo) { return photo.blob; }), catalog, function (phase, attempt) {
+      if (getSelectedDiagramProject() === project) {
+        if (phase === "requesting") {
+          elements.aiAnalysisStatus.textContent = "Analizando fotografías con Gemini…";
+        } else if (phase === "retrying") {
+          elements.aiAnalysisStatus.textContent = "Gemini no estaba disponible; reintentando (" + attempt + " de 3)…";
+        }
+      }
+    }).then(function (proposal) {
       if (getSelectedDiagramProject() !== project) return;
       showAiProposal(proposal, catalog);
       if (proposal.shape) {
@@ -415,8 +424,11 @@
       if (getSelectedStitchIds().length) renderDiagramFromEditor();
     }).catch(function (error) {
       console.error("Fallo el análisis con IA:", error);
-      elements.aiAnalysisResult.innerHTML = '<p class="validation-message error"><span aria-hidden="true">!</span><span>No se pudo analizar las fotos. Revisa la configuración de Firebase y vuelve a intentarlo.</span></p>';
-    }).then(function () {
+      if (getSelectedDiagramProject() === project) {
+        const message = error && error.message ? error.message : "No se pudieron analizar las fotos. Inténtalo de nuevo.";
+        elements.aiAnalysisResult.innerHTML = '<p class="validation-message error"><span aria-hidden="true">!</span><span>' + escapeHtml(message) + '</span></p>';
+      }
+    }).finally(function () {
       aiBusy = false;
       updateAiControls();
     });
@@ -611,15 +623,22 @@
         '<figcaption><span>' + escapeHtml(photo.label || photo.name || "Fotografía") + '</span>' +
         (index === 0 ? "<span>Principal</span>" : "<span>Complementaria</span>") + '</figcaption></figure>';
     }).join("");
+    const isAiReady = Boolean(aiAnalysis && aiAnalysis.isConfigured());
+    const aiNoticeHtml = isAiReady
+      ? '<div class="analysis-notice"><span aria-hidden="true">✦</span><div><strong>Análisis con IA disponible en el Boceto visual</strong>' +
+        '<p>Abre el boceto visual para analizar las fotos con Gemini e identificar automáticamente la silueta y los puntos de croché.</p></div></div>'
+      : '<div class="analysis-notice"><span aria-hidden="true">✳</span><div><strong>Análisis con IA no conectado</strong>' +
+        '<p>Configura tu clave de Gemini en <code>js/config.js</code> para analizar fotos. Mientras tanto, puedes preparar el boceto visual marcando los puntos a mano.</p></div></div>';
+    const diagramActionLabel = isAiReady ? "Abrir boceto y analizar con IA" : "Crear boceto visual";
+
     elements.projectDetail.innerHTML = '<div class="detail-content"><div class="detail-top"><div>' +
       '<p class="eyebrow">' + escapeHtml(project.garment) + '</p><h2 class="detail-title" id="detail-title">' + escapeHtml(project.name) + '</h2>' +
       '<p class="detail-meta">Actualizado el ' + formatDate(project.updatedAt) + ' · ' + project.photos.length + (project.photos.length === 1 ? " fotografía" : " fotografías") + '</p></div>' +
       '<button class="icon-button" type="button" data-detail-close aria-label="Cerrar">×</button></div>' +
       (project.description ? '<p class="detail-description">' + escapeHtml(project.description) + '</p>' : "") +
       '<div class="detail-gallery">' + photosHtml + '</div>' +
-      '<div class="analysis-notice"><span aria-hidden="true">✳</span><div><strong>Análisis de imagen todavía no disponible</strong>' +
-      '<p>Puedes crear un boceto visual a partir de tus selecciones. La app aún no identifica automáticamente la forma ni los puntos en las fotografías.</p></div></div>' +
-      '<div class="detail-diagram-action"><button class="button button-primary" type="button" data-open-diagram="' + escapeHtml(project.id) + '">Crear boceto visual</button></div></div>';
+      aiNoticeHtml +
+      '<div class="detail-diagram-action"><button class="button button-primary" type="button" data-open-diagram="' + escapeHtml(project.id) + '">' + escapeHtml(diagramActionLabel) + '</button></div></div>';
     elements.detailDialog.showModal();
   }
 
@@ -646,6 +665,9 @@
         link.removeAttribute("aria-current");
       }
     });
+    if (activeView === "diagram") {
+      updateAiControls();
+    }
     window.scrollTo(0, 0);
   }
 

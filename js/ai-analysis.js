@@ -1,13 +1,18 @@
 (function () {
   "use strict";
 
-  const GEMINI_MODEL = "gemini-flash-latest";
+  const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
   const MAX_PHOTOS = 4;
   const MAX_IMAGE_SIDE = 1280;
   const ANALYSIS_TIMEOUT_MS = 90000;
   const MAX_GEMINI_ATTEMPTS = 3;
   const SHAPES = ["triangle", "semicircle", "rectangle"];
   const CONFIDENCE = ["high", "medium", "low"];
+
+  function getGeminiModel() {
+    const custom = window.APP_CONFIG && window.APP_CONFIG.geminiModel;
+    return typeof custom === "string" && custom.trim() ? custom.trim() : DEFAULT_GEMINI_MODEL;
+  }
 
   function isConfigured() {
     const key = window.APP_CONFIG && window.APP_CONFIG.geminiApiKey;
@@ -126,7 +131,7 @@
     function attempt(number) {
       if (signal.aborted) return Promise.reject(new Error("El análisis ha caducado."));
       if (onProgress) onProgress(number === 1 ? "requesting" : "retrying", number);
-      return fetch("https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent", {
+      return fetch("https://generativelanguage.googleapis.com/v1beta/models/" + getGeminiModel() + ":generateContent", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": window.APP_CONFIG.geminiApiKey.trim() },
         signal: signal,

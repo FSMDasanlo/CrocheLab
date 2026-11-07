@@ -241,3 +241,22 @@ test("normalizeAnalysis tolerates garbage input", function () {
   assert.equal(result.stitches.length, 0);
   assert.equal(result.shape, null);
 });
+
+test("uses custom geminiModel from APP_CONFIG when provided", async function () {
+  windowContext.APP_CONFIG = { geminiApiKey: "test-key", geminiModel: "gemini-3.5-flash-lite" };
+  let requestedUrl = "";
+  fetchImpl = function (url) {
+    requestedUrl = url;
+    return Promise.resolve({
+      ok: true,
+      json: function () {
+        return Promise.resolve({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({ garment: "Gorro", stitches: [] }) }] } }]
+        });
+      }
+    });
+  };
+  await ai.analyzePhotos([{ type: "image/png", data: "Zm90bw==" }], []);
+  assert.match(requestedUrl, /models\/gemini-3\.5-flash-lite:generateContent$/);
+});
+
