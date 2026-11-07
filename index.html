@@ -6,6 +6,8 @@
     <meta name="theme-color" content="#f7f5f0">
     <meta name="description" content="CrochéLab: organiza proyectos de croché y crea diagramas SVG desde datos estructurados.">
     <title>CrochéLab — Taller de patrones</title>
+    <link rel="icon" type="image/png" href="img/icono_croche.png">
+    <link rel="apple-touch-icon" href="img/icono_croche.png">
     <link rel="stylesheet" href="css/styles.css">
     <script src="js/stitch-catalog.js" defer></script>
     <script src="js/diagram-engine.js" defer></script>
@@ -23,7 +25,9 @@
     <div class="app-shell">
       <aside class="sidebar">
         <a class="brand" href="#" aria-label="CrochéLab, inicio">
-          <span class="brand-mark" aria-hidden="true">c</span>
+          <span class="brand-mark" aria-hidden="true">
+            <img src="img/icono_croche.png" alt="CrochéLab" class="brand-logo-img">
+          </span>
           <span>Croché<span class="brand-light">Lab</span></span>
         </a>
 
@@ -44,7 +48,9 @@
         </nav>
 
         <div class="sidebar-bottom">
-          <div class="profile-avatar" id="user-avatar" aria-hidden="true">T</div>
+          <div class="profile-avatar" id="user-avatar" aria-hidden="true">
+            <img src="img/icono_croche.png" alt="Mi taller">
+          </div>
           <div class="profile-info">
             <strong id="user-display-name">Mi taller</strong>
             <span id="user-status-text">Espacio local</span>
@@ -102,8 +108,7 @@
           <div id="project-list" class="project-grid"></div>
           <div id="empty-state" class="empty-state">
             <div class="empty-illustration" aria-hidden="true">
-              <span class="yarn yarn-one"></span><span class="yarn yarn-two"></span>
-              <span class="needle"></span>
+              <img src="img/icono_croche.png" alt="CrochéLab" class="empty-illustration-img">
             </div>
             <h3>Tu próximo proyecto empieza aquí</h3>
             <p>Crea un proyecto y añade una foto principal y todos los detalles que te inspiren.</p>

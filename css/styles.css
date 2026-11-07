@@ -54,16 +54,27 @@ button { cursor: pointer; }
 }
 
 .brand-mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 12px 12px 12px 4px;
-  color: white;
-  background: var(--plum);
-  font-family: Georgia, serif;
-  font-size: 23px;
-  font-style: italic;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(111, 74, 122, 0.22);
+  flex-shrink: 0;
+  transition: transform .2s ease;
+}
+
+.brand:hover .brand-mark {
+  transform: scale(1.05);
+}
+
+.brand-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .brand-light { color: var(--plum); font-weight: 500; }
@@ -260,7 +271,9 @@ h1 { font-size: 32px; }
 .card-action.delete:hover { color: #a64e4e; background: #fff0ef; }
 
 .empty-state { display: flex; min-height: 296px; flex-direction: column; align-items: center; justify-content: center; padding: 32px; border: 1px dashed #ded8df; border-radius: 11px; background: #fff; text-align: center; }
-.empty-illustration { position: relative; width: 76px; height: 63px; margin-bottom: 14px; }
+.empty-illustration { position: relative; width: 88px; height: 88px; margin-bottom: 16px; display: flex; align-items: center; justify-content: center; }
+.empty-illustration-img { width: 100%; height: 100%; object-fit: cover; border-radius: 18px; box-shadow: 0 8px 24px rgba(111, 74, 122, 0.16); transition: transform .3s ease; }
+.empty-illustration-img:hover { transform: scale(1.06) rotate(-2deg); }
 .yarn { position: absolute; width: 42px; height: 42px; border: 1px solid #d5c6db; border-radius: 50%; background: repeating-linear-gradient(45deg, transparent 0 4px, #e8deeb 5px 6px); }
 .yarn-one { top: 8px; left: 7px; background-color: #f4edf6; }
 .yarn-two { top: 16px; right: 5px; border-color: #ead2c4; background-color: #fbf0e9; background-image: repeating-linear-gradient(-40deg, transparent 0 4px, #f1dfd4 5px 6px); }
@@ -449,7 +462,7 @@ h1 { font-size: 32px; }
 @media (max-width: 700px) {
   .sidebar { position: static; width: 100%; height: auto; min-height: 75px; flex-direction: column; align-items: stretch; justify-content: center; gap: 6px; padding: 7px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
   .brand { font-size: 17px; }
-  .brand-mark { width: 30px; height: 30px; border-radius: 10px 10px 10px 4px; font-size: 20px; }
+  .brand-mark { width: 30px; height: 30px; border-radius: 8px; }
   .sidebar-label, .sidebar-bottom { display: none; }
   .sidebar nav { display: flex; width: 100%; justify-content: space-between; gap: 3px; }
   .nav-link { min-height: 31px; flex: 1; justify-content: center; gap: 5px; padding: 0 5px; font-size: 9px; }

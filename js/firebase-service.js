@@ -187,7 +187,7 @@
   function ensurePhotoBlob(photo) {
     if (photo.blob instanceof Blob) return Promise.resolve(photo.blob);
     if (!photo.downloadUrl) return Promise.reject(new Error("Fotografía sin URL de descarga."));
-    return fetch(photo.downloadUrl)
+    return fetch(photo.downloadUrl, { mode: "cors" })
       .then(function (res) {
         if (!res.ok) throw new Error("No se pudo descargar la imagen (" + res.status + ").");
         return res.blob();

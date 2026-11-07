@@ -573,13 +573,14 @@
     renderDiagramProjectOptions();
 
     elements.projectList.innerHTML = filteredProjects.map(function (project) {
-      const primaryPhoto = project.photos[0];
-      const imageUrl = primaryPhoto ? (primaryPhoto.downloadUrl || (primaryPhoto.blob ? createObjectUrl(primaryPhoto.blob) : "")) : "";
+      const primaryPhoto = project.photos && project.photos[0];
+      const imageUrl = primaryPhoto ? (primaryPhoto.downloadUrl || (primaryPhoto.blob ? createObjectUrl(primaryPhoto.blob) : "img/icono_croche.png")) : "img/icono_croche.png";
+      const imageAlt = primaryPhoto ? (primaryPhoto.label || primaryPhoto.name || project.name) : project.name;
       const description = project.description || "Sin descripción";
       return '<article class="project-card">' +
         '<button class="project-cover" type="button" data-action="open" data-id="' + escapeHtml(project.id) + '" aria-label="Abrir proyecto ' + escapeHtml(project.name) + '">' +
-        '<img src="' + imageUrl + '" alt="' + escapeHtml(primaryPhoto.label || primaryPhoto.name || project.name) + '">' +
-        '<span class="photo-count-badge">▧ ' + project.photos.length + '</span></button>' +
+        '<img src="' + imageUrl + '" alt="' + escapeHtml(imageAlt) + '">' +
+        '<span class="photo-count-badge">▧ ' + (project.photos ? project.photos.length : 0) + '</span></button>' +
         '<div class="project-card-body"><p class="project-type">' + escapeHtml(project.garment) + '</p>' +
         '<h3 title="' + escapeHtml(project.name) + '">' + escapeHtml(project.name) + '</h3>' +
         '<p class="project-description" title="' + escapeHtml(description) + '">' + escapeHtml(description) + '</p>' +
@@ -591,6 +592,17 @@
 
   function refreshProjects() {
     return getAllProjects().then(function (savedProjects) {
+      savedProjects.forEach(function (savedProj) {
+        const existingProj = projects.find(function (p) { return p.id === savedProj.id; });
+        if (existingProj && Array.isArray(existingProj.photos)) {
+          (savedProj.photos || []).forEach(function (savedPhoto) {
+            const existingPhoto = existingProj.photos.find(function (p) { return p.id === savedPhoto.id; });
+            if (existingPhoto && existingPhoto.blob instanceof Blob) {
+              savedPhoto.blob = existingPhoto.blob;
+            }
+          });
+        }
+      });
       projects = savedProjects.sort(function (a, b) { return new Date(b.updatedAt) - new Date(a.updatedAt); });
       renderProjects();
     });
@@ -970,8 +982,7 @@
       }
     } else {
       if (elements.userAvatar) {
-        elements.userAvatar.innerHTML = "";
-        elements.userAvatar.textContent = "T";
+        elements.userAvatar.innerHTML = '<img src="img/icono_croche.png" alt="Mi taller">';
       }
       if (elements.userDisplayName) {
         elements.userDisplayName.textContent = "Mi taller";
