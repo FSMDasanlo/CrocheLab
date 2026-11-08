@@ -70,41 +70,86 @@
     return Boolean(isInitialized && currentUser);
   }
 
-  function uploadPhoto(userId, projectId, photo) {
+  async function sameData(left, right, seen) {
+    if (Object.is(left, right)) return true;
+    if (left === null || right === null || typeof left !== "object" || typeof right !== "object") return false;
+    if (left instanceof Blob || right instanceof Blob) {
+      if (!(left instanceof Blob) || !(right instanceof Blob) || left.size !== right.size || left.type !== right.type) return false;
+      if (left.name !== right.name || left.lastModified !== right.lastModified) return false;
+      for (let offset = 0; offset < left.size; offset += 262144) {
+        const contents = await Promise.all([
+          left.slice(offset, offset + 262144).arrayBuffer(),
+          right.slice(offset, offset + 262144).arrayBuffer()
+        ]);
+        const a = new Uint8Array(contents[0]);
+        const b = new Uint8Array(contents[1]);
+        if (!a.every(function (value, index) { return value === b[index]; })) return false;
+      }
+      return true;
+    }
+    if (typeof left.isEqual === "function" && typeof right.isEqual === "function") return left.isEqual(right);
+    if (left instanceof Date || right instanceof Date) {
+      return left instanceof Date && right instanceof Date && left.getTime() === right.getTime();
+    }
+    const leftArray = Array.isArray(left);
+    if (leftArray !== Array.isArray(right)) return false;
+    if (leftArray && left.length !== right.length) return false;
+    if (!leftArray && (Object.prototype.toString.call(left) !== "[object Object]" ||
+        Object.prototype.toString.call(right) !== "[object Object]" ||
+        (Object.getPrototypeOf(left) && Object.getPrototypeOf(left).constructor.name !== "Object") ||
+        (Object.getPrototypeOf(right) && Object.getPrototypeOf(right).constructor.name !== "Object"))) {
+      throw new Error("No se pueden comparar todos los datos guardados de forma segura.");
+    }
+    seen = seen || new WeakMap();
+    if (seen.has(left)) return seen.get(left) === right;
+    seen.set(left, right);
+    const keys = Object.keys(left);
+    const otherKeys = Object.keys(right);
+    if (keys.length !== otherKeys.length) return false;
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(right, key) || !(await sameData(left[key], right[key], seen))) return false;
+    }
+    return true;
+  }
+
+  function assertCurrent(userId, isCurrent) {
+    if (!currentUser || currentUser.uid !== userId || typeof isCurrent !== "function" || !isCurrent()) {
+      throw new Error("La sesión o el almacenamiento ha cambiado. La operación puede haber quedado incompleta.");
+    }
+  }
+
+  async function assertUnchanged(snapshot, expected) {
+    if (expected === undefined || !(await sameData(snapshot.exists ? snapshot.data() : null, expected))) {
+      throw new Error("El documento cambió desde que se abrió. Recarga antes de volver a intentarlo.");
+    }
+  }
+
+  function uploadPhoto(userId, projectId, photo, onUploaded) {
     if (!storage) return Promise.reject(new Error("Cloud Storage no disponible."));
     if (!photo.blob) {
       return Promise.resolve(photo);
     }
-    const filename = (photo.id || crypto.randomUUID()) + ".jpg";
-    const path = "users/" + encodeURIComponent(userId) + "/projects/" + encodeURIComponent(projectId) + "/photos/" + filename;
-    const storageRef = storage.ref(path);
-    return storageRef.put(photo.blob, { contentType: photo.blob.type || "image/jpeg" })
-      .then(function (snapshot) {
-        return snapshot.ref.getDownloadURL();
-      })
+    const path = photo.storagePath || ("users/" + encodeURIComponent(userId) + "/projects/" +
+      encodeURIComponent(projectId) + "/photos/" + photo.id + "-" + crypto.randomUUID() + ".jpg");
+    const reference = storage.ref(path);
+    const uploaded = photo.storagePath
+      ? Promise.resolve(reference)
+      : reference.put(photo.blob, { contentType: photo.blob.type || "image/jpeg" }).then(function (snapshot) {
+        photo.storagePath = path;
+        if (onUploaded) onUploaded(photo);
+        return snapshot.ref;
+      });
+    return uploaded.then(function (ref) { return ref.getDownloadURL(); })
       .then(function (downloadUrl) {
-        return {
+        return Object.assign({}, photo, {
           id: photo.id,
           name: photo.name || "Fotografía",
           label: photo.label || "",
           storagePath: path,
           downloadUrl: downloadUrl,
           blob: photo.blob
-        };
-      });
-  }
-
-  function deletePhotos(photos) {
-    if (!storage || !Array.isArray(photos)) return Promise.resolve();
-    const promises = photos.map(function (photo) {
-      if (photo && photo.storagePath) {
-        return storage.ref(photo.storagePath).delete().catch(function (err) {
-          console.warn("No se pudo borrar foto de Storage:", photo.storagePath, err);
         });
-      }
-      return Promise.resolve();
-    });
-    return Promise.all(promises);
+      });
   }
 
   function getAllProjects(userId) {
@@ -120,54 +165,66 @@
       });
   }
 
-  function saveProject(userId, project) {
+  async function saveProject(userId, project, expected, isCurrent, onPhotoUploaded) {
     if (!db) return Promise.reject(new Error("Firestore no disponible."));
+    assertCurrent(userId, isCurrent);
+    let uploadedAny = false;
     const uploadPromises = (project.photos || []).map(function (photo) {
       if (photo.blob && !photo.downloadUrl) {
-        return uploadPhoto(userId, project.id, photo);
-      }
-      return Promise.resolve({
-        id: photo.id,
-        name: photo.name || "Fotografía",
-        label: photo.label || "",
-        storagePath: photo.storagePath || null,
-        downloadUrl: photo.downloadUrl || null,
-        blob: photo.blob || null
-      });
-    });
-
-    return Promise.all(uploadPromises).then(function (uploadedPhotos) {
-      const docData = {
-        id: project.id,
-        name: project.name,
-        garment: project.garment,
-        description: project.description || "",
-        createdAt: project.createdAt,
-        updatedAt: project.updatedAt,
-        photos: uploadedPhotos.map(function (p) {
-          return {
-            id: p.id,
-            name: p.name,
-            label: p.label,
-            storagePath: p.storagePath || null,
-            downloadUrl: p.downloadUrl || null
-          };
-        })
-      };
-      return db.collection("users").doc(userId).collection("projects").doc(project.id).set(docData)
-        .then(function () {
-          project.photos = uploadedPhotos;
-          return project;
+        return uploadPhoto(userId, project.id, photo, function (partial) {
+          uploadedAny = true;
+          if (onPhotoUploaded) onPhotoUploaded(partial);
+        }).then(function (uploaded) {
+          Object.assign(photo, uploaded);
+          uploadedAny = true;
+          if (onPhotoUploaded) onPhotoUploaded(uploaded);
+          return uploaded;
         });
+      }
+      return Promise.resolve(photo);
     });
+    const results = await Promise.allSettled(uploadPromises);
+    const failure = results.find(function (result) { return result.status === "rejected"; });
+    if (failure) throw new Error("No se pudo completar la subida. Puede haber fotografías sin asociar; no se ha borrado ninguna. " + failure.reason.message);
+    assertCurrent(userId, isCurrent);
+    const docData = Object.assign({}, expected || {}, project, {
+      photos: project.photos.map(function (photo) {
+        const saved = Object.assign({}, photo);
+        delete saved.blob;
+        return saved;
+      })
+    });
+    const reference = db.collection("users").doc(userId).collection("projects").doc(project.id);
+    try {
+      await db.runTransaction(async function (transaction) {
+        const snapshot = await transaction.get(reference);
+        await assertUnchanged(snapshot, expected);
+        assertCurrent(userId, isCurrent);
+        transaction.set(reference, docData);
+      });
+    } catch (error) {
+      if (uploadedAny) {
+        throw new Error("No se pudo confirmar la asociación de fotografías; pueden quedar archivos sin asociar. " + error.message);
+      }
+      throw error;
+    }
+    return project;
   }
 
-  function deleteProject(userId, projectId, existingPhotos) {
+  function deleteProject(userId, projectId, expected, expectedPattern, isCurrent) {
     if (!db) return Promise.reject(new Error("Firestore no disponible."));
-    const deleteDocPromise = db.collection("users").doc(userId).collection("projects").doc(projectId).delete();
-    const deletePatternPromise = db.collection("users").doc(userId).collection("patterns").doc("pattern-" + projectId).delete().catch(function () {});
-    const deleteStoragePromise = deletePhotos(existingPhotos);
-    return Promise.all([deleteDocPromise, deletePatternPromise, deleteStoragePromise]);
+    const user = db.collection("users").doc(userId);
+    const projectRef = user.collection("projects").doc(projectId);
+    const patternRef = user.collection("patterns").doc("pattern-" + projectId);
+    return db.runTransaction(async function (transaction) {
+      assertCurrent(userId, isCurrent);
+      const snapshots = await Promise.all([transaction.get(projectRef), transaction.get(patternRef)]);
+      await assertUnchanged(snapshots[0], expected);
+      await assertUnchanged(snapshots[1], expectedPattern);
+      assertCurrent(userId, isCurrent);
+      transaction.delete(projectRef);
+      if (snapshots[1].exists) transaction.delete(patternRef);
+    });
   }
 
   function getPattern(userId, patternId) {
@@ -178,10 +235,17 @@
       });
   }
 
-  function savePattern(userId, pattern) {
+  function savePattern(userId, pattern, expected, isCurrent) {
     if (!db) return Promise.reject(new Error("Firestore no disponible."));
     const docId = pattern.id || ("pattern-" + pattern.projectId);
-    return db.collection("users").doc(userId).collection("patterns").doc(docId).set(pattern);
+    const reference = db.collection("users").doc(userId).collection("patterns").doc(docId);
+    return db.runTransaction(async function (transaction) {
+      assertCurrent(userId, isCurrent);
+      const snapshot = await transaction.get(reference);
+      await assertUnchanged(snapshot, expected);
+      assertCurrent(userId, isCurrent);
+      transaction.set(reference, pattern);
+    });
   }
 
   function ensurePhotoBlob(photo) {
@@ -205,6 +269,7 @@
     logout: logout,
     getCurrentUser: getCurrentUser,
     isCloudActive: isCloudActive,
+    sameData: sameData,
     getAllProjects: getAllProjects,
     saveProject: saveProject,
     deleteProject: deleteProject,

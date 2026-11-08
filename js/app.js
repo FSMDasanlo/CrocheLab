@@ -76,6 +76,83 @@
   let renderedSvg = "";
   let diagramPhotoUrls = [];
   let selectedDiagramPhotoId = null;
+  let projectSnapshots = new Map();
+  let editingSnapshot = null;
+  let editingContext = null;
+  let pendingProjectId = null;
+  let patternSnapshot;
+  let patternContext = null;
+  let contextEpoch = 0;
+  let contextKey = null;
+  let refreshSequence = 0;
+  let patternLoadSequence = 0;
+  let projectBusy = false;
+
+  function currentStorageKey() {
+    const user = firebaseService && firebaseService.getCurrentUser();
+    return firebaseService && firebaseService.isCloudActive() && user ? "cloud:" + user.uid : "local";
+  }
+
+  function storageContext() {
+    return { key: currentStorageKey(), epoch: contextEpoch };
+  }
+
+  function isCurrentContext(context) {
+    return Boolean(context && context.epoch === contextEpoch && context.key === currentStorageKey());
+  }
+
+  function localTransaction(checks, changes, context) {
+    return new Promise(function (resolve, reject) {
+      if (!database) { reject(new Error("Base de datos local no disponible.")); return; }
+      if (!firebaseService || !firebaseService.sameData) { reject(new Error("No se puede verificar la integridad de los datos.")); return; }
+      const stores = Array.from(new Set(checks.map(function (check) { return check.store; }).concat(
+        changes.map(function (change) { return change.store; })
+      )));
+      const transaction = database.transaction(stores, "readwrite");
+      let problem = null;
+      let remaining = checks.length;
+      let comparisonReady = false;
+      const values = [];
+      transaction.oncomplete = function () { resolve(); };
+      transaction.onerror = function () { problem = problem || transaction.error; };
+      transaction.onabort = function () { reject(problem || transaction.error || new Error("No se pudo completar la operación local.")); };
+
+      // Blob comparisons are asynchronous; keep the IndexedDB transaction active until they finish.
+      function keepAlive() {
+        const request = transaction.objectStore(stores[0]).get("__crochelab_integrity_check__");
+        request.onsuccess = function () {
+          if (!comparisonReady) { keepAlive(); return; }
+          if (!isCurrentContext(context)) problem = new Error("El almacenamiento cambió. No se ha completado la operación.");
+          if (problem) { transaction.abort(); return; }
+          changes.forEach(function (change) {
+            const store = transaction.objectStore(change.store);
+            if (change.remove) store.delete(change.key);
+            else store.put(change.value);
+          });
+        };
+      }
+
+      checks.forEach(function (check, index) {
+        const request = transaction.objectStore(check.store).get(check.key);
+        request.onsuccess = function () {
+          values[index] = request.result === undefined ? null : request.result;
+          remaining -= 1;
+          if (remaining !== 0) return;
+          keepAlive();
+          Promise.all(checks.map(function (item, i) {
+            if (item.expected === undefined) return Promise.resolve(false);
+            return firebaseService.sameData(values[i], item.expected);
+          })).then(function (matches) {
+            if (matches.some(function (match) { return !match; })) {
+              problem = new Error("El documento cambió desde que se abrió. Recarga antes de volver a intentarlo.");
+            }
+          }).catch(function (error) {
+            problem = error;
+          }).finally(function () { comparisonReady = true; });
+        };
+      });
+    });
+  }
 
   function openDatabase() {
     return new Promise(function (resolve, reject) {
@@ -105,71 +182,73 @@
     });
   }
 
-  function getAllProjects() {
-    if (firebaseService && firebaseService.isCloudActive()) {
-      return firebaseService.getAllProjects(firebaseService.getCurrentUser().uid);
+  function getAllProjects(context) {
+    if (context.key !== "local") {
+      return firebaseService.getAllProjects(context.key.slice(6));
     }
     return new Promise(function (resolve, reject) {
-      if (!database) { resolve([]); return; }
+      if (!database) { reject(new Error("Base de datos local no disponible.")); return; }
       const request = database.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).getAll();
       request.onsuccess = function () { resolve(request.result || []); };
       request.onerror = function () { reject(request.error); };
     });
   }
 
-  function saveProject(project) {
-    if (firebaseService && firebaseService.isCloudActive()) {
-      return firebaseService.saveProject(firebaseService.getCurrentUser().uid, project);
+  function saveProject(project, expected, context) {
+    if (!isCurrentContext(context)) return Promise.reject(new Error("El almacenamiento cambió. Conserva los cambios y vuelve al espacio original."));
+    if (context.key !== "local") {
+      return firebaseService.saveProject(context.key.slice(6), project, expected, function () {
+        return isCurrentContext(context);
+      }, function (uploaded) {
+        const staged = stagedPhotos.find(function (photo) { return photo.id === uploaded.id; });
+        if (staged) {
+          staged.storagePath = uploaded.storagePath;
+          staged.downloadUrl = uploaded.downloadUrl;
+        }
+      });
+    }
+    return localTransaction([{ store: STORE_NAME, key: project.id, expected: expected }],
+      [{ store: STORE_NAME, value: project }], context);
+  }
+
+  function deleteProject(projectId, expected, expectedPattern, context) {
+    if (!isCurrentContext(context)) return Promise.reject(new Error("El almacenamiento cambió. No se ha eliminado el proyecto."));
+    if (context.key !== "local") {
+      return firebaseService.deleteProject(context.key.slice(6), projectId, expected, expectedPattern, function () {
+        return isCurrentContext(context);
+      });
+    }
+    const patternId = "pattern-" + projectId;
+    return localTransaction([
+      { store: STORE_NAME, key: projectId, expected: expected },
+      { store: PATTERN_STORE_NAME, key: patternId, expected: expectedPattern }
+    ], [
+      { store: STORE_NAME, key: projectId, remove: true },
+      { store: PATTERN_STORE_NAME, key: patternId, remove: true }
+    ], context);
+  }
+
+  function getPattern(patternId, context) {
+    if (context.key !== "local") {
+      return firebaseService.getPattern(context.key.slice(6), patternId);
     }
     return new Promise(function (resolve, reject) {
       if (!database) { reject(new Error("Base de datos local no disponible.")); return; }
-      const transaction = database.transaction(STORE_NAME, "readwrite");
-      transaction.objectStore(STORE_NAME).put(project);
-      transaction.oncomplete = function () { resolve(); };
-      transaction.onerror = function () { reject(transaction.error); };
-      transaction.onabort = function () { reject(transaction.error || new Error("No se pudo guardar el proyecto.")); };
-    });
-  }
-
-  function deleteProject(projectId, projectPhotos) {
-    if (firebaseService && firebaseService.isCloudActive()) {
-      return firebaseService.deleteProject(firebaseService.getCurrentUser().uid, projectId, projectPhotos);
-    }
-    return new Promise(function (resolve, reject) {
-      if (!database) { reject(new Error("Base de datos local no disponible.")); return; }
-      const transaction = database.transaction([STORE_NAME, PATTERN_STORE_NAME], "readwrite");
-      transaction.objectStore(STORE_NAME).delete(projectId);
-      transaction.objectStore(PATTERN_STORE_NAME).delete("pattern-" + projectId);
-      transaction.oncomplete = function () { resolve(); };
-      transaction.onerror = function () { reject(transaction.error); };
-      transaction.onabort = function () { reject(transaction.error || new Error("No se pudo eliminar el proyecto.")); };
-    });
-  }
-
-  function getPattern(patternId) {
-    if (firebaseService && firebaseService.isCloudActive()) {
-      return firebaseService.getPattern(firebaseService.getCurrentUser().uid, patternId);
-    }
-    return new Promise(function (resolve, reject) {
-      if (!database) { resolve(null); return; }
       const request = database.transaction(PATTERN_STORE_NAME, "readonly").objectStore(PATTERN_STORE_NAME).get(patternId);
       request.onsuccess = function () { resolve(request.result || null); };
       request.onerror = function () { reject(request.error || new Error("No se pudo leer el patrón.")); };
     });
   }
 
-  function savePattern(pattern) {
-    if (firebaseService && firebaseService.isCloudActive()) {
-      return firebaseService.savePattern(firebaseService.getCurrentUser().uid, pattern);
+  function savePattern(pattern, expected, context) {
+    if (!isCurrentContext(context)) return Promise.reject(new Error("El almacenamiento cambió. No se ha guardado el boceto."));
+    if (context.key !== "local") {
+      return firebaseService.savePattern(context.key.slice(6), pattern, expected, function () {
+        return isCurrentContext(context);
+      });
     }
-    return new Promise(function (resolve, reject) {
-      if (!database) { reject(new Error("Base de datos local no disponible.")); return; }
-      const transaction = database.transaction(PATTERN_STORE_NAME, "readwrite");
-      transaction.objectStore(PATTERN_STORE_NAME).put(pattern);
-      transaction.oncomplete = function () { resolve(); };
-      transaction.onerror = function () { reject(transaction.error); };
-      transaction.onabort = function () { reject(transaction.error || new Error("No se pudo guardar el patrón.")); };
-    });
+    return localTransaction([{ store: PATTERN_STORE_NAME, key: pattern.id, expected: expected }],
+      [{ store: PATTERN_STORE_NAME, value: pattern }], context);
   }
 
   function escapeHtml(value) {
@@ -309,7 +388,12 @@
     } else {
       elements.diagramProjectSelect.value = "";
       renderDiagramPhotoGallery(null);
-      resetDiagramPreview();
+      if (renderedPattern) {
+        elements.diagramSaveButton.disabled = true;
+        showDiagramMessages(["El proyecto del boceto no está disponible en este espacio. Puedes descargar el SVG antes de seleccionar otro proyecto."], [], "");
+      } else {
+        resetDiagramPreview();
+      }
       updateSketchControls();
     }
     updateAiControls();
@@ -342,6 +426,10 @@
   }
 
   function loadPatternForProject(projectId) {
+    const context = storageContext();
+    const sequence = ++patternLoadSequence;
+    patternSnapshot = undefined;
+    patternContext = context;
     resetDiagramPreview();
     clearAiResult();
     updateAiControls();
@@ -351,10 +439,11 @@
       return Promise.resolve();
     }
     renderDiagramPhotoGallery(getSelectedDiagramProject());
-    return getPattern("pattern-" + projectId).then(function (pattern) {
-      if (elements.diagramProjectSelect.value !== projectId) return;
+    return getPattern("pattern-" + projectId, context).then(function (pattern) {
+      if (!isCurrentContext(context) || sequence !== patternLoadSequence || elements.diagramProjectSelect.value !== projectId) return;
       const project = projects.find(function (item) { return item.id === projectId; });
       if (!project) return;
+      patternSnapshot = pattern;
       const sketch = pattern && pattern.sketch;
       const projectPhotoIds = new Set(project.photos.map(function (photo) { return photo.id; }));
       const savedPhotoId = pattern && Array.isArray(pattern.sourceImages) && pattern.sourceImages.length
@@ -376,7 +465,9 @@
       }
     }).catch(function (error) {
       console.error("No se pudo cargar el patrón del proyecto:", error);
-      showDiagramMessages(["No se pudo cargar el patrón guardado."], [], "");
+      if (isCurrentContext(context) && sequence === patternLoadSequence) {
+        showDiagramMessages(["No se pudo cargar el patrón guardado; no se puede guardar un boceto con seguridad."], [], "");
+      }
     });
   }
 
@@ -477,6 +568,10 @@
   }
 
   function renderDiagramFromEditor() {
+    if (renderedPattern && patternContext && !isCurrentContext(patternContext)) {
+      showDiagramMessages(["El boceto pertenece al espacio anterior. Descarga el SVG antes de seleccionar otro proyecto."], [], "");
+      return;
+    }
     resetDiagramPreview();
     const project = getSelectedDiagramProject();
     if (!project) {
@@ -527,20 +622,79 @@
       showDiagramMessages(["Genera primero un boceto para poder guardarlo."], [], "");
       return;
     }
+    if (!isCurrentContext(patternContext) || patternSnapshot === undefined) {
+      showDiagramMessages(["No se ha podido verificar el patrón de este espacio. Vuelve a seleccionar el proyecto."], [], "");
+      return;
+    }
+    if (patternSnapshot && !patternSnapshot.sketch) {
+      showDiagramMessages(["Existe un patrón anterior que no es un boceto. No se sobrescribirá."], [], "");
+      return;
+    }
     const validation = diagramEngine.validate(renderedPattern);
     if (validation.errors.length) {
       showDiagramMessages(validation.errors, validation.warnings, "");
       return;
     }
     elements.diagramSaveButton.disabled = true;
-    savePattern(renderedPattern).then(function () {
+    const context = patternContext;
+    const projectId = renderedPattern.projectId;
+    const loadSequence = patternLoadSequence;
+    const submittedPattern = renderedPattern;
+    const previous = patternSnapshot;
+    let toSave = renderedPattern;
+    if (previous) {
+      const photos = Array.isArray(previous.sourceImages) ? previous.sourceImages.slice() : [];
+      renderedPattern.sourceImages.forEach(function (photo) {
+        if (!photos.some(function (item) { return item.photoId === photo.photoId; })) photos.push(photo);
+      });
+      toSave = Object.assign({}, previous, {
+        sketch: Object.assign({}, previous.sketch, renderedPattern.sketch),
+        construction: Object.assign({}, previous.construction, renderedPattern.construction),
+        sourceImages: photos
+      });
+    }
+    const safeToReplace = Promise.resolve().then(function () {
+      if (!previous) return;
+      const originalSketch = diagramEngine.createSketch({
+        projectId: projectId,
+        photos: [],
+        shape: previous.sketch.shape,
+        rows: previous.sketch.detailRows,
+        selectedStitchIds: previous.sketch.selectedStitchIds
+      });
+      return firebaseService.sameData(previous.construction, originalSketch.construction).then(function (matches) {
+        if (!matches) throw new Error("El boceto guardado contiene una construcción distinta; no se sobrescribirá.");
+      });
+    });
+    safeToReplace.then(function () {
+      return savePattern(toSave, previous, context);
+    }).then(function () {
+      if (!isCurrentContext(context)) {
+        showDiagramMessages(["El boceto se guardó en el espacio anterior; comprueba ese espacio."], [], "");
+        return;
+      }
+      if (elements.diagramProjectSelect.value !== projectId || patternLoadSequence !== loadSequence) {
+        showToast("Boceto guardado en el proyecto anterior.");
+        return;
+      }
+      patternSnapshot = toSave;
+      if (renderedPattern !== submittedPattern) {
+        showDiagramMessages([], [], "Se guardó la versión anterior; los cambios actuales del boceto siguen pendientes.");
+        return;
+      }
       showToast("Boceto guardado en el proyecto.");
       showDiagramMessages([], validation.warnings, "Boceto guardado; no es un patrón de tejido.");
     }).catch(function (error) {
       console.error("No se pudo guardar el diagrama:", error);
-      showDiagramMessages(["No se pudo guardar el diagrama en este dispositivo."], [], "");
+      if (isCurrentContext(context) && elements.diagramProjectSelect.value === projectId && patternLoadSequence === loadSequence) {
+        showDiagramMessages(["No se pudo confirmar el guardado: " + error.message], [], "");
+      } else {
+        showToast("No se pudo confirmar el guardado del boceto anterior: " + error.message, true);
+      }
     }).finally(function () {
-      elements.diagramSaveButton.disabled = false;
+      if (isCurrentContext(context) && elements.diagramProjectSelect.value === projectId && patternLoadSequence === loadSequence) {
+        elements.diagramSaveButton.disabled = false;
+      }
     });
   }
 
@@ -595,19 +749,31 @@
   }
 
   function refreshProjects() {
-    return getAllProjects().then(function (savedProjects) {
-      savedProjects.forEach(function (savedProj) {
+    const context = storageContext();
+    const sequence = ++refreshSequence;
+    return getAllProjects(context).then(function (savedProjects) {
+      if (!isCurrentContext(context) || sequence !== refreshSequence) return;
+      const snapshots = new Map(savedProjects.map(function (item) { return [item.id, item]; }));
+      const copies = savedProjects.map(function (savedProj) {
+        return Object.assign({}, savedProj, {
+          photos: (savedProj.photos || []).map(function (photo) { return Object.assign({}, photo); })
+        });
+      });
+      copies.forEach(function (savedProj) {
         const existingProj = projects.find(function (p) { return p.id === savedProj.id; });
         if (existingProj && Array.isArray(existingProj.photos)) {
           (savedProj.photos || []).forEach(function (savedPhoto) {
             const existingPhoto = existingProj.photos.find(function (p) { return p.id === savedPhoto.id; });
-            if (existingPhoto && existingPhoto.blob instanceof Blob) {
+            if (context.key !== "local" && !savedPhoto.blob && existingPhoto &&
+                existingPhoto.downloadUrl === savedPhoto.downloadUrl &&
+                existingPhoto.storagePath === savedPhoto.storagePath && existingPhoto.blob instanceof Blob) {
               savedPhoto.blob = existingPhoto.blob;
             }
           });
         }
       });
-      projects = savedProjects.sort(function (a, b) { return new Date(b.updatedAt) - new Date(a.updatedAt); });
+      projectSnapshots = snapshots;
+      projects = copies.sort(function (a, b) { return new Date(b.updatedAt) - new Date(a.updatedAt); });
       renderProjects();
     });
   }
@@ -618,6 +784,9 @@
     stagedPhotos.forEach(function (photo) { URL.revokeObjectURL(photo.url); });
     stagedPhotos = [];
     editingProjectId = null;
+    editingSnapshot = null;
+    editingContext = null;
+    pendingProjectId = null;
     elements.photoStaging.innerHTML = "";
     elements.photoInput.value = "";
   }
@@ -626,6 +795,9 @@
     stagedPhotos.forEach(function (photo) { URL.revokeObjectURL(photo.url); });
     stagedPhotos = [];
     editingProjectId = null;
+    editingSnapshot = null;
+    editingContext = null;
+    pendingProjectId = null;
     elements.photoStaging.innerHTML = "";
     elements.photoInput.value = "";
   });
@@ -642,6 +814,9 @@
 
   function openNewProject() {
     editingProjectId = null;
+    editingSnapshot = null;
+    editingContext = storageContext();
+    pendingProjectId = crypto.randomUUID();
     stagedPhotos = [];
     elements.projectForm.reset();
     elements.dialogTitle.textContent = "Nuevo proyecto";
@@ -653,6 +828,9 @@
 
   function openEditProject(project) {
     editingProjectId = project.id;
+    editingSnapshot = projectSnapshots.get(project.id);
+    editingContext = storageContext();
+    pendingProjectId = project.id;
     elements.projectForm.reset();
     elements.name.value = project.name;
     elements.garment.value = project.garment;
@@ -787,6 +965,11 @@
 
   function onFormSubmit(event) {
     event.preventDefault();
+    if (projectBusy) return;
+    if (!isCurrentContext(editingContext) || editingSnapshot === undefined) {
+      showToast("El espacio cambió o no se pudo verificar el proyecto. Copia los cambios antes de cerrar el formulario.", true);
+      return;
+    }
     if (!elements.projectForm.reportValidity()) return;
     if (!stagedPhotos.length) {
       showToast("Añade al menos una fotografía para crear el proyecto.", true);
@@ -794,37 +977,56 @@
     }
     const existingProject = projects.find(function (project) { return project.id === editingProjectId; });
     const now = new Date().toISOString();
-    const project = {
-      id: editingProjectId || crypto.randomUUID(),
+    const project = Object.assign({}, editingSnapshot || {}, {
+      id: pendingProjectId,
       name: elements.name.value.trim(),
       garment: elements.garment.value,
       description: elements.description.value.trim(),
       createdAt: existingProject ? existingProject.createdAt : now,
       updatedAt: now,
       photos: stagedPhotos.map(function (photo) {
-        return {
+        const previous = editingSnapshot && Array.isArray(editingSnapshot.photos)
+          ? editingSnapshot.photos.find(function (item) { return item.id === photo.id; })
+          : null;
+        return Object.assign({}, previous || {}, {
           id: photo.id,
           label: photo.label.trim(),
           name: photo.name,
           blob: photo.blob || null,
           downloadUrl: photo.downloadUrl || null,
           storagePath: photo.storagePath || null,
-          type: (photo.blob && photo.blob.type) || "image/jpeg"
-        };
+          type: (photo.blob && photo.blob.type) || (previous && previous.type) || "image/jpeg"
+        });
       })
-    };
+    });
 
-    elements.saveButton.disabled = true;
-    saveProject(project).then(function () {
+    const context = editingContext;
+    projectBusy = true;
+    const controls = Array.from(elements.projectForm.querySelectorAll("input, textarea, select, button"));
+    const disabledStates = controls.map(function (control) { return control.disabled; });
+    controls.forEach(function (control) { control.disabled = true; });
+    saveProject(project, editingSnapshot, context).then(function () {
       closeProjectDialog();
-      return refreshProjects();
-    }).then(function () {
-      showToast(existingProject ? "Proyecto actualizado." : "Proyecto creado.");
+      if (!isCurrentContext(context)) {
+        showToast("El proyecto se guardó en el espacio anterior. Comprueba ese espacio.", true);
+        return;
+      }
+      return refreshProjects().then(function () {
+        if (!isCurrentContext(context)) {
+          showToast("El proyecto se guardó en el espacio anterior. Comprueba ese espacio.", true);
+          return;
+        }
+        showToast(existingProject ? "Proyecto actualizado." : "Proyecto creado.");
+      }).catch(function (error) {
+        console.error("El proyecto se guardó, pero no se pudo actualizar la lista:", error);
+        showToast("Proyecto guardado, pero no se pudo actualizar la lista. Recarga para comprobarlo.", true);
+      });
     }).catch(function (error) {
       console.error("No se pudo guardar el proyecto:", error);
-      showToast("No se pudo guardar el proyecto. Comprueba el espacio disponible en el navegador.", true);
+      showToast("No se pudo confirmar el guardado: " + error.message, true);
     }).finally(function () {
-      elements.saveButton.disabled = false;
+      projectBusy = false;
+      controls.forEach(function (control, index) { control.disabled = disabledStates[index]; });
     });
   }
 
@@ -839,17 +1041,42 @@
     } else if (actionButton.dataset.action === "edit") {
       openEditProject(project);
     } else if (actionButton.dataset.action === "delete") {
-      if (!window.confirm('¿Eliminar "' + project.name + '" y sus fotografías? Esta acción no se puede deshacer.')) return;
-      deleteProject(project.id, project.photos).then(refreshProjects).then(function () {
-        showToast("Proyecto eliminado.");
+      const context = storageContext();
+      const expected = projectSnapshots.get(project.id);
+      if (expected === undefined) { showToast("No se pudo verificar el proyecto.", true); return; }
+      getPattern("pattern-" + project.id, context).then(function (pattern) {
+        if (!isCurrentContext(context)) throw new Error("El almacenamiento cambió.");
+        const description = context.key === "local"
+          ? "Se eliminarán el proyecto, su boceto y sus fotografías locales."
+          : "Se eliminarán el proyecto y su boceto. Las fotografías de Storage se conservarán.";
+        if (!window.confirm('¿Eliminar "' + project.name + '"? ' + description + " Esta acción no se puede deshacer.")) return;
+        return deleteProject(project.id, expected, pattern, context).then(function () {
+          if (!isCurrentContext(context)) {
+            showToast("El proyecto se eliminó del espacio anterior. Comprueba ese espacio.", true);
+            return;
+          }
+          return refreshProjects().then(function () {
+            if (!isCurrentContext(context)) {
+              showToast("El proyecto se eliminó del espacio anterior. Comprueba ese espacio.", true);
+              return;
+            }
+            showToast("Proyecto eliminado.");
+          }).catch(function (error) {
+            console.error("El proyecto se eliminó, pero no se pudo actualizar la lista:", error);
+            showToast("Proyecto eliminado, pero no se pudo actualizar la lista.", true);
+          });
+        });
       }).catch(function (error) {
         console.error("No se pudo eliminar el proyecto:", error);
-        showToast("No se pudo eliminar el proyecto.", true);
+        showToast("No se pudo confirmar la eliminación: " + error.message, true);
       });
     }
   }
 
   elements.projectList.addEventListener("click", onProjectListClick);
+  elements.projectDialog.addEventListener("cancel", function (event) {
+    if (projectBusy) event.preventDefault();
+  });
   elements.search.addEventListener("input", renderProjects);
   elements.photoInput.addEventListener("change", onFilesSelected);
   elements.projectForm.addEventListener("submit", onFormSubmit);
@@ -933,7 +1160,7 @@
   elements.sketchStitchChoices.addEventListener("change", function () {
     updateSketchControls();
     if (getSelectedDiagramProject() && getSelectedStitchIds().length) renderDiagramFromEditor();
-    else resetDiagramPreview();
+    else if (!renderedPattern || isCurrentContext(patternContext)) resetDiagramPreview();
   });
   document.querySelectorAll('input[name="sketch-shape"]').forEach(function (input) {
     input.addEventListener("change", function () {
@@ -1031,8 +1258,24 @@
   if (firebaseService) {
     firebaseService.init();
     firebaseService.onAuthChange(function (user) {
+      const newKey = currentStorageKey();
+      if (newKey !== contextKey) {
+        contextKey = newKey;
+        contextEpoch += 1;
+        refreshSequence += 1;
+        patternLoadSequence += 1;
+        projects = [];
+        projectSnapshots = new Map();
+        renderProjects();
+      }
       updateAuthUI(user);
-      refreshProjects();
+      if (newKey !== "local" || database) {
+        const context = storageContext();
+        refreshProjects().catch(function (error) {
+          console.error("No se pudieron cargar los proyectos:", error);
+          if (isCurrentContext(context)) showToast("No se pudieron cargar los proyectos de este espacio.", true);
+        });
+      }
     });
   }
 
