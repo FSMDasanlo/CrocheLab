@@ -464,7 +464,8 @@ h1 { font-size: 32px; }
   .sidebar { position: static; width: 100%; height: auto; min-height: 75px; flex-direction: column; align-items: stretch; justify-content: center; gap: 6px; padding: 7px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
   .brand { font-size: 17px; }
   .brand-mark { width: 30px; height: 30px; border-radius: 8px; }
-  .sidebar-label, .sidebar-bottom { display: none; }
+  .sidebar-label { display: none; }
+  .sidebar-bottom { margin-top: 0; padding: 7px 4px 2px; }
   .sidebar nav { display: flex; width: 100%; justify-content: space-between; gap: 3px; }
   .nav-link { min-height: 31px; flex: 1; justify-content: center; gap: 5px; padding: 0 5px; font-size: 9px; }
   .nav-icon { font-size: 14px; }
