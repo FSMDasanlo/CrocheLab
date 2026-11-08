@@ -195,10 +195,17 @@
       })
     });
     const reference = db.collection("users").doc(userId).collection("projects").doc(project.id);
+    const removedPhoto = expected && Array.isArray(expected.photos) && expected.photos.some(function (photo) {
+      return !project.photos.some(function (item) { return item.id === photo.id; });
+    });
     try {
       await db.runTransaction(async function (transaction) {
         const snapshot = await transaction.get(reference);
         await assertUnchanged(snapshot, expected);
+        if (removedPhoto) {
+          const reconstruction = await transaction.get(db.collection("users").doc(userId).collection("patterns").doc("reconstruction-" + project.id));
+          if (reconstruction.exists) throw new Error("No se pueden retirar fotografías de un proyecto con reconstrucciones guardadas.");
+        }
         assertCurrent(userId, isCurrent);
         transaction.set(reference, docData);
       });
@@ -216,11 +223,13 @@
     const user = db.collection("users").doc(userId);
     const projectRef = user.collection("projects").doc(projectId);
     const patternRef = user.collection("patterns").doc("pattern-" + projectId);
+    const reconstructionRef = user.collection("patterns").doc("reconstruction-" + projectId);
     return db.runTransaction(async function (transaction) {
       assertCurrent(userId, isCurrent);
-      const snapshots = await Promise.all([transaction.get(projectRef), transaction.get(patternRef)]);
+      const snapshots = await Promise.all([transaction.get(projectRef), transaction.get(patternRef), transaction.get(reconstructionRef)]);
       await assertUnchanged(snapshots[0], expected);
       await assertUnchanged(snapshots[1], expectedPattern);
+      if (snapshots[2].exists) throw new Error("El proyecto tiene reconstrucciones guardadas y no se puede eliminar.");
       assertCurrent(userId, isCurrent);
       transaction.delete(projectRef);
       if (snapshots[1].exists) transaction.delete(patternRef);
@@ -245,6 +254,22 @@
       await assertUnchanged(snapshot, expected);
       assertCurrent(userId, isCurrent);
       transaction.set(reference, pattern);
+    });
+  }
+
+  function saveReconstruction(userId, reconstruction, expected, expectedProject, isCurrent) {
+    if (!db) return Promise.reject(new Error("Firestore no disponible."));
+    const user = db.collection("users").doc(userId);
+    const projectRef = user.collection("projects").doc(reconstruction.projectId);
+    const reference = user.collection("patterns").doc(reconstruction.id);
+    return db.runTransaction(async function (transaction) {
+      assertCurrent(userId, isCurrent);
+      const snapshots = await Promise.all([transaction.get(projectRef), transaction.get(reference)]);
+      await assertUnchanged(snapshots[0], expectedProject);
+      await assertUnchanged(snapshots[1], expected);
+      if (!snapshots[0].exists) throw new Error("El proyecto ya no existe.");
+      assertCurrent(userId, isCurrent);
+      transaction.set(reference, reconstruction);
     });
   }
 
@@ -275,6 +300,7 @@
     deleteProject: deleteProject,
     getPattern: getPattern,
     savePattern: savePattern,
+    saveReconstruction: saveReconstruction,
     ensurePhotoBlob: ensurePhotoBlob
   });
 })();

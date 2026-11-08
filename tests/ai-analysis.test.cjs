@@ -46,6 +46,34 @@ vm.runInNewContext(fs.readFileSync(path.join(root, "js", "ai-analysis.js"), "utf
 });
 const ai = windowContext.CrocheLabAI;
 
+test("reconstruction findings retain the photo reference and reject fabricated or malformed structure", function () {
+  const entry = { kind: "observation", category: "stitch", statement: "Punto visible", confidence: "medium",
+    region: { x: 0.1, y: 0.2, width: 0.4, height: 0.5 } };
+  const result = ai.normalizeReconstructionFindings({ findings: [entry] }, "photo-5");
+  assert.equal(result[0].photoId, "photo-5");
+  assert.equal(result[0].region.width, 0.4);
+  assert.throws(() => ai.normalizeReconstructionFindings({ findings: [] }, "photo"), /hallazgos/);
+  assert.throws(() => ai.normalizeReconstructionFindings({ findings: [{ ...entry, kind: "invented" }] }, "photo"), /incompatible/);
+  assert.throws(() => ai.normalizeReconstructionFindings({ findings: [{ ...entry, region: { x: 0.9, y: 0, width: 0.2, height: 1 } }] }, "photo"), /región/);
+});
+
+test("automatic synthesis submits findings and expects a structured construction", async function () {
+  windowContext.APP_CONFIG = { geminiApiKey: "test-key" };
+  let body;
+  fetchImpl = function (url, options) {
+    body = JSON.parse(options.body);
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ candidates: [{ content: { parts: [
+      { text: JSON.stringify({ document: null, claims: [], assumptions: [], unknowns: ["No se ve el inicio"], complete: false }) }
+    ] } }] }) });
+  };
+  const result = await ai.proposeReconstruction([{ id: "f1", photoId: "p1", kind: "unknown", statement: "Inicio oculto" }], []);
+  assert.equal(result.document, null);
+  assert.equal(result.unknowns[0], "No se ve el inicio");
+  assert.match(body.contents[0].parts[0].text, /Inicio oculto/);
+  assert.equal(body.generationConfig.responseMimeType, "application/json");
+  delete windowContext.APP_CONFIG;
+});
+
 test("analysis is disabled until a Gemini API key is configured", async function () {
   assert.equal(ai.isConfigured(), false);
   await assert.rejects(ai.analyzePhotos([{}], [{ id: "chain", name: "Cadeneta" }]));
@@ -277,4 +305,3 @@ test("uses custom geminiModel from APP_CONFIG when provided", async function () 
   await ai.analyzePhotos([{ type: "image/png", data: "Zm90bw==" }], []);
   assert.match(requestedUrl, /models\/gemini-3\.5-flash-lite:generateContent$/);
 });
-

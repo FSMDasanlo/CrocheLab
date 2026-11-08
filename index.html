@@ -20,6 +20,8 @@
     <script src="js/firebase-service.js" defer></script>
     <script src="js/ai-analysis.js" defer></script>
     <script src="js/app.js" defer></script>
+    <script type="module" src="js/reconstruction-ui.mjs"></script>
+    <script type="module" src="js/automatic-reconstruction-ui.mjs"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -44,6 +46,10 @@
           <a class="nav-link" href="#diagram-tool" data-view="diagram" aria-label="Boceto visual">
             <span class="nav-icon" aria-hidden="true">◇</span>
             Boceto visual
+          </a>
+          <a class="nav-link" href="#reconstruction-tool" data-view="reconstruction">
+            <span class="nav-icon" aria-hidden="true">⌁</span>
+            Reconstrucción
           </a>
         </nav>
 
@@ -160,6 +166,137 @@
             <span>CrochéLab <span aria-hidden="true">·</span> Símbolos vectoriales SVG</span>
             <span>Fase 2 · Catálogo inicial</span>
           </footer>
+        </section>
+
+        <section id="reconstruction-tool" class="diagram-page" aria-labelledby="automatic-title" hidden>
+          <div class="page-heading"><div>
+            <p class="eyebrow">TU PATRÓN A PARTIR DE FOTOGRAFÍAS</p>
+            <h1 id="automatic-title">Generar un patrón</h1>
+            <p class="page-intro">Elige un proyecto, añade fotografías generales y de detalle y deja que CrochéLab prepare una propuesta.</p>
+          </div></div>
+          <div class="automatic-toolbar panel-card">
+            <label class="field"><span>Proyecto</span><select id="automatic-project"><option value="">Selecciona un proyecto…</option></select></label>
+            <div class="automatic-actions">
+              <button class="button button-secondary" id="automatic-new" type="button">Crear proyecto</button>
+              <button class="button button-secondary" id="automatic-photos-button" type="button" disabled>Añadir fotografías</button>
+              <button class="button button-primary" id="automatic-generate" type="button" disabled>GENERAR PATRÓN</button>
+              <button class="button button-secondary" id="automatic-save" type="button" hidden>Reintentar guardado</button>
+            </div>
+            <p id="automatic-status" role="status" aria-live="polite">Selecciona un proyecto.</p>
+          </div>
+          <div class="automatic-layout">
+            <section class="panel-card">
+              <h2>Fotografías de la prenda</h2>
+              <p>Selecciona una imagen para ampliarla.</p>
+              <div id="automatic-photos" class="automatic-photos"></div>
+            </section>
+            <section class="panel-card automatic-result" id="automatic-result" hidden>
+              <h2>Tu propuesta de patrón</h2>
+              <p id="automatic-validation" role="status"></p>
+              <h3>Esquema de conexiones</h3>
+              <p>Los símbolos y conexiones proceden de las operaciones calculadas; el dibujo no reproduce necesariamente la silueta.</p>
+              <div id="automatic-svg" class="reconstruction-svg"></div>
+              <h3>Instrucciones para tejer</h3>
+              <pre id="automatic-instructions"></pre>
+              <h3>Fiabilidad y aspectos pendientes</h3>
+              <div id="automatic-reliability"></div>
+            </section>
+          </div>
+          <dialog id="automatic-photo-dialog" class="automatic-photo-dialog">
+            <form method="dialog"><button class="button button-secondary" type="submit">Cerrar imagen</button></form>
+            <img id="automatic-photo-large" alt="">
+          </dialog>
+          <div id="reconstruction-advanced" hidden>
+          <div class="page-heading"><div>
+            <p class="eyebrow">RECONSTRUCCIÓN REVISABLE</p>
+            <h1 id="reconstruction-title">Construcción desde fotografías</h1>
+            <p class="page-intro">Las imágenes aportan evidencia; las operaciones y sus uniones se revisan antes de considerarlas coherentes.</p>
+          </div></div>
+          <aside class="catalog-note"><p>Este flujo es independiente del boceto visual. Un resultado lógico coherente no garantiza que reproduzca la prenda ni que sea físicamente tejible.</p></aside>
+          <label class="field"><span>Proyecto</span><select id="reconstruction-project"><option value="">Selecciona un proyecto…</option></select></label>
+          <button class="button button-quiet" id="reconstruction-reload" type="button">Volver a cargar el proyecto</button>
+          <p id="reconstruction-status" role="status" aria-live="polite">Selecciona un proyecto.</p>
+          <div class="diagram-layout">
+            <div class="diagram-controls">
+              <section class="panel-card">
+                <h2>Fotografías y evidencias</h2>
+                <div id="reconstruction-photo-viewer" class="diagram-photo-viewer"></div>
+                <div id="reconstruction-photos"></div>
+                <button class="button button-secondary" id="reconstruction-add-photos" type="button" disabled>Añadir fotografías al proyecto</button>
+                <button class="button button-secondary" id="reconstruction-analyze" type="button" disabled>Analizar todas las fotografías</button>
+                <div id="reconstruction-analysis-status" aria-live="polite"></div>
+              </section>
+              <section class="panel-card">
+                <h2>Revisión de hallazgos</h2>
+                <p>Confirma, rechaza o corrige cada hallazgo. Ninguno se convierte automáticamente en una operación.</p>
+                <label class="field"><span>Tipo de observación humana</span><select id="reconstruction-manual-kind"><option value="observation">Observación</option><option value="inference">Inferencia</option><option value="unknown">Incógnita</option></select></label>
+                <label class="field"><span>Observación humana de la fotografía seleccionada</span><textarea id="reconstruction-manual-finding" rows="2"></textarea></label>
+                <button class="button button-secondary" id="reconstruction-add-finding" type="button" disabled>Añadir observación confirmada</button>
+                <div id="reconstruction-findings"></div>
+              </section>
+              <section class="panel-card">
+                <h2>Construcción lógica</h2>
+                <p>Introduce solo operaciones que hayas comprobado. Los identificadores y anclajes deben ser explícitos.</p>
+                <label class="field"><span>Hallazgo confirmado que respalda la operación</span><select id="reconstruction-evidence"></select></label>
+                <div class="reconstruction-controls">
+                  <label class="field"><span>Cadenetas iniciales confirmadas</span><input id="reconstruction-base-count" type="number" min="1" max="200"></label>
+                  <button class="button button-secondary" id="reconstruction-base" type="button" disabled>Crear inicio y primera fila</button>
+                  <button class="button button-secondary" id="reconstruction-row" type="button" disabled>Añadir fila con giro</button>
+                </div>
+                <div class="reconstruction-controls">
+                  <label class="field"><span>Fila</span><select id="reconstruction-row-select"></select></label>
+                  <label class="field"><span>Operación</span><select id="reconstruction-operation-type">
+                    <option value="sc">Punto bajo</option><option value="hdc">Medio punto alto</option>
+                    <option value="dc">Punto alto</option><option value="tr">Punto alto doble</option>
+                    <option value="increase">Aumento de puntos bajos</option><option value="decrease">Disminución de puntos bajos</option>
+                    <option value="chain">Cadenetas</option><option value="slip">Punto deslizado</option>
+                  </select></label>
+                  <label class="field"><span>Anclaje de entrada</span><input id="reconstruction-target" type="text" placeholder="fila/operación/top"></label>
+                  <label class="field"><span>Segundo anclaje para disminución</span><input id="reconstruction-target2" type="text"></label>
+                  <label class="field"><span>Cantidad para cadenetas o aumento</span><input id="reconstruction-count" type="number" min="1" max="200"></label>
+                  <label class="field"><span>Función de las cadenetas</span><select id="reconstruction-chain-role"><option value="">Selecciona su función…</option><option value="turning">Giro</option><option value="space_boundary">Límite de un espacio</option><option value="decorative">Decorativa</option><option value="foundation">Base</option></select></label>
+                  <button class="button button-secondary" id="reconstruction-add-operation" type="button" disabled>Añadir operación</button>
+                </div>
+                <p id="reconstruction-frontier" class="choice-hint"></p>
+                <div id="reconstruction-operations"></div>
+                <details>
+                  <summary>Corregir una operación o instancia de motivo</summary>
+                  <div class="reconstruction-controls">
+                    <label class="field"><span>ID de operación o repetición</span><input id="reconstruction-correction-operation" type="text"></label>
+                    <label class="field"><span>ID de iteración (solo para motivos)</span><input id="reconstruction-correction-iteration" type="text"></label>
+                    <label class="field"><span>ID de instancia de motivo</span><input id="reconstruction-correction-motif" type="text"></label>
+                    <label class="field"><span>Parámetro</span><input id="reconstruction-correction-parameter" type="text" placeholder="type, target, stitchIds, postIds…"></label>
+                    <label class="field"><span>Nuevo valor JSON</span><textarea id="reconstruction-correction-value" rows="2" placeholder='Ej.: "dc" o {"tokens":["p1","p2"]}'></textarea></label>
+                    <label class="field"><span>Motivo de la corrección (obligatorio)</span><input id="reconstruction-correction-reason" type="text"></label>
+                    <button class="button button-secondary" id="reconstruction-correct" type="button" disabled>Aplicar corrección del motor</button>
+                  </div>
+                </details>
+                <details>
+                  <summary>Documento lógico avanzado: motivos, repeticiones y relaciones</summary>
+                  <p>Edita el JSON completo y aplícalo expresamente. Los anclajes que dejen de existir se señalarán; no se redirigen.</p>
+                  <label class="field"><span>Documento lógico JSON</span><textarea id="reconstruction-json" rows="18" spellcheck="false"></textarea></label>
+                  <button class="button button-secondary" id="reconstruction-apply-json" type="button" disabled>Aplicar documento</button>
+                  <button class="button button-quiet" id="reconstruction-reset-json" type="button" disabled>Descartar edición JSON no aplicada</button>
+                </details>
+                <label class="field"><span>Materiales</span><textarea id="reconstruction-materials" rows="2"></textarea></label>
+                <label class="field"><span>Observaciones</span><textarea id="reconstruction-notes" rows="2"></textarea></label>
+                <label><input id="reconstruction-complete" type="checkbox"> He revisado la construcción completa y sus evidencias.</label>
+                <button class="button button-primary" id="reconstruction-save" type="button" disabled>Guardar revisión</button>
+                <label class="field"><span>Versiones anteriores</span><select id="reconstruction-versions"></select></label>
+                <button class="button button-secondary" id="reconstruction-restore" type="button" disabled>Recuperar como borrador</button>
+              </section>
+            </div>
+            <section class="panel-card reconstruction-results">
+              <h2>Validación, instrucciones y esquema</h2>
+              <div id="reconstruction-validation" aria-live="polite"></div>
+              <h3>Instrucciones desde la traza</h3>
+              <pre id="reconstruction-instructions"></pre>
+              <h3>Relaciones desde la misma traza</h3>
+              <p>Representación lógica de operaciones y conexiones, no dibujo de la silueta.</p>
+              <div id="reconstruction-svg" class="reconstruction-svg"></div>
+            </section>
+          </div>
+          </div>
         </section>
 
         <section id="diagram-tool" class="diagram-page" aria-labelledby="diagram-title" hidden>

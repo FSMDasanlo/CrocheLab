@@ -1,0 +1,10 @@
+{
+  "name": "crochelab",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1"
+  }
+}

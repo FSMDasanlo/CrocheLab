@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crochelab:core:1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "revision", "conventions", "initial", "motifs", "rows"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "id": { "$ref": "#/$defs/id" },
+    "revision": { "$ref": "#/$defs/revision" },
+    "conventions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rowCountStitchTypes", "rowCountChainRoles"],
+      "properties": {
+        "rowCountStitchTypes": { "type": "array", "uniqueItems": true, "items": { "enum": ["sc", "hdc", "dc", "tr", "slip", "sc2tog"] } },
+        "rowCountChainRoles": { "type": "array", "uniqueItems": true, "items": { "enum": ["foundation", "turning", "space_boundary", "decorative"] } }
+      }
+    },
+    "initial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direction", "anchors", "frontier", "activeLoop"],
+      "properties": {
+        "direction": { "$ref": "#/$defs/direction" },
+        "anchors": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "kind": { "enum": ["stitch", "chain", "space", "edge"] }
+            }
+          }
+        },
+        "frontier": { "$ref": "#/$defs/refs" },
+        "activeLoop": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "origin"],
+              "properties": {
+                "id": { "$ref": "#/$defs/id" },
+                "origin": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind", "anchor"],
+                  "properties": {
+                    "kind": { "const": "attached_to" },
+                    "anchor": { "$ref": "#/$defs/ref" }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "motifs": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/motifDefinition" }
+    },
+    "rows": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/row" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$" },
+    "ref": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[A-Za-z][A-Za-z0-9_-]*(/[A-Za-z][A-Za-z0-9_-]*)+$" },
+    "refs": { "type": "array", "maxItems": 10000, "uniqueItems": true, "items": { "$ref": "#/$defs/ref" } },
+    "direction": { "enum": ["left_to_right", "right_to_left", null] },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "parentId", "change"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "parentId": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+        "change": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["origin", "target", "before", "after", "reason"],
+              "properties": {
+                "origin": { "const": "human" },
+                "target": { "$ref": "#/$defs/correctionTarget" },
+                "before": { "$ref": "#/$defs/correctionValue" },
+                "after": { "$ref": "#/$defs/correctionValue" },
+                "reason": { "type": "string", "minLength": 1 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "correctionTarget": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["rowId", "repeatId", "iterationId", "motifId", "parameter"],
+          "properties": {
+            "rowId": { "$ref": "#/$defs/id" }, "repeatId": { "$ref": "#/$defs/id" },
+            "iterationId": { "$ref": "#/$defs/id" }, "motifId": { "$ref": "#/$defs/id" },
+            "parameter": { "$ref": "#/$defs/id" }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["rowId", "operationId", "parameter"],
+          "properties": {
+            "rowId": { "$ref": "#/$defs/id" }, "operationId": { "$ref": "#/$defs/id" },
+            "parameter": { "$ref": "#/$defs/id" }
+          }
+        }
+      ]
+    },
+    "anchorExpr": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["ref"], "properties": { "ref": { "$ref": "#/$defs/ref" } } },
+        { "type": "object", "additionalProperties": false, "required": ["local"], "properties": { "local": { "$ref": "#/$defs/ref" } } },
+        { "type": "object", "additionalProperties": false, "required": ["param"], "properties": { "param": { "$ref": "#/$defs/id" } } },
+        { "type": "object", "additionalProperties": false, "required": ["unknown"], "properties": { "unknown": { "type": "string", "minLength": 1 } } }
+      ]
+    },
+    "tokensExpr": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["tokens"], "properties": { "tokens": { "type": "array", "minItems": 1, "maxItems": 1000, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } } } },
+        { "type": "object", "additionalProperties": false, "required": ["param"], "properties": { "param": { "$ref": "#/$defs/id" } } },
+        { "type": "object", "additionalProperties": false, "required": ["unknown"], "properties": { "unknown": { "type": "string", "minLength": 1 } } }
+      ]
+    },
+    "value": { "anyOf": [{ "$ref": "#/$defs/anchorExpr" }, { "$ref": "#/$defs/tokensExpr" }] },
+    "correctionValue": {
+      "anyOf": [
+        { "$ref": "#/$defs/value" },
+        { "type": "string", "minLength": 1 },
+        { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/anchorExpr" } }
+      ]
+    },
+    "bindings": { "type": "object", "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/value" } },
+    "stitch": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "target"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "type": { "enum": ["sc", "hdc", "dc", "tr"] }, "target": { "$ref": "#/$defs/anchorExpr" } }
+    },
+    "slip": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "target", "reuse"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "type": { "const": "slip" }, "target": { "$ref": "#/$defs/anchorExpr" }, "reuse": { "enum": ["none", "motif_closure"] } }
+    },
+    "chain": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "chainIds", "role"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "type": { "const": "chain" }, "chainIds": { "$ref": "#/$defs/tokensExpr" }, "role": { "enum": ["foundation", "turning", "space_boundary", "decorative"] } }
+    },
+    "increase": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "target", "stitchType", "stitchIds"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "type": { "const": "increase" }, "target": { "$ref": "#/$defs/anchorExpr" }, "stitchType": { "enum": ["sc", "hdc", "dc", "tr"] }, "stitchIds": { "$ref": "#/$defs/tokensExpr" } }
+    },
+    "decrease": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "targets", "technique"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "type": { "const": "decrease" }, "targets": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/anchorExpr" } }, "technique": { "const": "sc2tog" } }
+    },
+    "space": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "chainId", "closureId"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "type": { "const": "space" }, "chainId": { "$ref": "#/$defs/id" }, "closureId": { "$ref": "#/$defs/id" } }
+    },
+    "turn": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "type": { "const": "turn" } }
+    },
+    "unknown": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "reason"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "type": { "const": "unknown" }, "reason": { "type": "string", "minLength": 1 } }
+    },
+    "primitive": { "oneOf": [{ "$ref": "#/$defs/stitch" }, { "$ref": "#/$defs/slip" }, { "$ref": "#/$defs/chain" }, { "$ref": "#/$defs/increase" }, { "$ref": "#/$defs/decrease" }, { "$ref": "#/$defs/space" }, { "$ref": "#/$defs/turn" }, { "$ref": "#/$defs/unknown" }] },
+    "motif": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "definitionId", "definitionVersion", "bindings"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "type": { "const": "motif" }, "definitionId": { "$ref": "#/$defs/id" }, "definitionVersion": { "type": "integer", "minimum": 1 }, "bindings": { "$ref": "#/$defs/bindings" } }
+    },
+    "iteration": {
+      "type": "object", "additionalProperties": false, "required": ["id", "bindings", "overrides"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "bindings": { "$ref": "#/$defs/bindings" },
+        "overrides": { "type": "object", "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/bindings" } }
+      }
+    },
+    "repeat": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "iterations", "operations"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "type": { "const": "repeat" },
+        "iterations": { "type": "array", "minItems": 1, "maxItems": 1000, "items": { "$ref": "#/$defs/iteration" } },
+        "operations": { "type": "array", "minItems": 1, "maxItems": 1000, "items": { "oneOf": [{ "$ref": "#/$defs/primitive" }, { "$ref": "#/$defs/motif" }] } }
+      }
+    },
+    "motifDefinition": {
+      "type": "object", "additionalProperties": false, "required": ["id", "version", "parameters", "operations"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "version": { "type": "integer", "minimum": 1 },
+        "parameters": { "type": "object", "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "enum": ["anchor", "tokens"] } },
+        "operations": { "type": "array", "minItems": 1, "maxItems": 1000, "items": { "$ref": "#/$defs/primitive" } }
+      }
+    },
+    "row": {
+      "type": "object", "additionalProperties": false, "required": ["id", "direction", "operations", "nextPass"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "direction": { "$ref": "#/$defs/direction" },
+        "operations": { "type": "array", "maxItems": 1000, "items": { "oneOf": [{ "$ref": "#/$defs/primitive" }, { "$ref": "#/$defs/motif" }, { "$ref": "#/$defs/repeat" }] } },
+        "nextPass": {
+          "type": "object", "additionalProperties": false, "required": ["export", "carry", "skip", "order"],
+          "properties": {
+            "export": { "type": "array", "uniqueItems": true, "items": { "enum": ["sc.top", "hdc.top", "dc.top", "tr.top", "sc2tog.top", "slip.top", "chain.anchor", "space.anchor"] } },
+            "carry": { "$ref": "#/$defs/refs" },
+            "skip": { "$ref": "#/$defs/refs" },
+            "order": { "enum": ["same", "reverse"] }
+          }
+        }
+      }
+    }
+  }
+}

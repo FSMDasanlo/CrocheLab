@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crochelab:trace:1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["engineVersion", "status", "initialState", "diagnostics", "events", "rows"],
+  "properties": {
+    "engineVersion": { "const": "1.0.0" },
+    "status": { "$ref": "#/$defs/status" },
+    "initialState": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["direction", "frontier", "activeLoop"],
+          "properties": {
+            "direction": { "enum": ["left_to_right", "right_to_left", null] },
+            "frontier": { "type": "array", "items": { "type": "string" } },
+            "activeLoop": {
+              "oneOf": [
+                { "type": "null" },
+                {
+                  "type": "object", "additionalProperties": false, "required": ["id", "origin"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "origin": {
+                      "type": "object", "additionalProperties": false, "required": ["kind", "anchor"],
+                      "properties": { "kind": { "const": "attached_to" }, "anchor": { "type": "string" } }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
+    "events": { "type": "array", "items": { "$ref": "#/$defs/event" } },
+    "rows": { "type": "array", "items": { "$ref": "#/$defs/row" } }
+  },
+  "$defs": {
+    "status": { "enum": ["valid", "incomplete", "invalid"] },
+    "nullableString": { "type": ["string", "null"] },
+    "diagnostic": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "code", "rowId", "operationId", "reference", "message"],
+      "properties": {
+        "status": { "enum": ["invalid", "incomplete"] },
+        "code": { "type": "string", "minLength": 1 },
+        "rowId": { "$ref": "#/$defs/nullableString" },
+        "operationId": { "$ref": "#/$defs/nullableString" },
+        "reference": { "$ref": "#/$defs/nullableString" },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "event": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "rowId", "type", "source", "inputs", "directionBefore", "directionAfter", "loopBefore", "loopAfter", "produced", "connections", "dependsOn"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "rowId": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["sc", "hdc", "dc", "tr", "sc2tog", "slip", "chain", "space", "turn"] },
+        "source": {
+          "type": "object", "additionalProperties": false,
+          "required": ["operationId", "motifId", "motifVersion"],
+          "properties": {
+            "operationId": { "type": "string", "minLength": 1 },
+            "motifId": { "$ref": "#/$defs/nullableString" },
+            "motifVersion": { "type": ["integer", "null"], "minimum": 1 }
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["id", "role", "usage", "reuseReason"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "role": { "enum": ["target", "chain", "closure"] },
+              "usage": { "enum": ["first", "reuse", "internal_first", "internal_reuse", "none"] },
+              "reuseReason": { "enum": ["increase", "motif_closure", null] }
+            }
+          }
+        },
+        "directionBefore": { "enum": ["left_to_right", "right_to_left"] },
+        "directionAfter": { "enum": ["left_to_right", "right_to_left"] },
+        "loopBefore": { "type": "string", "minLength": 1 },
+        "loopAfter": { "type": "string", "minLength": 1 },
+        "produced": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["id", "kind", "stitchType", "role"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "kind": { "enum": ["stitch", "chain", "space", "stitch_anchor", "chain_anchor", "space_anchor", "active_loop"] },
+              "stitchType": { "enum": ["sc", "hdc", "dc", "tr", "sc2tog", "slip", null] },
+              "role": { "enum": ["foundation", "turning", "space_boundary", "decorative", null] }
+            }
+          }
+        },
+        "connections": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["type", "from", "to"],
+            "properties": {
+              "type": { "enum": ["works_into", "follows", "starts_at", "closed_at", "bounded_by", "loop_at", "anchor_of"] },
+              "from": { "type": "string", "minLength": 1 },
+              "to": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "dependsOn": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
+      }
+    },
+    "counts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["availableInputs", "consumedInputs", "reuses", "internalUses", "stitchesByType", "totalStitches", "rowCount", "chains", "spaces", "exported"],
+      "properties": {
+        "availableInputs": { "type": "integer", "minimum": 0 },
+        "consumedInputs": { "type": "integer", "minimum": 0 },
+        "reuses": { "type": "integer", "minimum": 0 },
+        "internalUses": { "type": "integer", "minimum": 0 },
+        "stitchesByType": {
+          "type": "object", "additionalProperties": false,
+          "required": ["sc", "hdc", "dc", "tr", "sc2tog", "slip"],
+          "properties": {
+            "sc": { "type": "integer", "minimum": 0 }, "hdc": { "type": "integer", "minimum": 0 },
+            "dc": { "type": "integer", "minimum": 0 }, "tr": { "type": "integer", "minimum": 0 },
+            "sc2tog": { "type": "integer", "minimum": 0 }, "slip": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "totalStitches": { "type": "integer", "minimum": 0 },
+        "rowCount": { "type": "integer", "minimum": 0 },
+        "chains": { "type": "integer", "minimum": 0 },
+        "spaces": { "type": "integer", "minimum": 0 },
+        "exported": {
+          "type": "object", "additionalProperties": false, "required": ["stitch", "chain", "space"],
+          "properties": {
+            "stitch": { "type": "integer", "minimum": 0 }, "chain": { "type": "integer", "minimum": 0 }, "space": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "row": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "status", "inputFrontier", "outputFrontier", "directionBefore", "directionAfter", "loopBefore", "loopAfter", "counts"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/status" },
+        "inputFrontier": { "type": "array", "items": { "type": "string" } },
+        "outputFrontier": { "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" } }] },
+        "directionBefore": { "enum": ["left_to_right", "right_to_left", null] },
+        "directionAfter": { "enum": ["left_to_right", "right_to_left", null] },
+        "loopBefore": { "$ref": "#/$defs/nullableString" },
+        "loopAfter": { "$ref": "#/$defs/nullableString" },
+        "counts": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/counts" }] }
+      }
+    }
+  }
+}

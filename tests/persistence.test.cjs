@@ -359,3 +359,48 @@ test("document comparison checks blob content and fails closed on unsupported va
   assert.equal(await service.sameData({ a: 1 }, { a: 2 }), false);
   await assert.rejects(service.sameData(new Map([[1, 2]]), new Map([[1, 2]])), /comparar/i);
 });
+
+test("reconstruction persists and reopens without losing evidence, outputs or revisions", async () => {
+  const env = createService();
+  const original = { ...project(), photos: [{ id: "p", downloadUrl: "https://example.invalid/p" }] };
+  const record = {
+    id: "reconstruction-p1", projectId: "p1", formatVersion: 1,
+    findings: [{ id: "f", photoId: "p", corrections: [{ before: "a", after: "b" }] }],
+    logicalDocument: { revision: { id: "r2", parentId: "r1" } },
+    outputs: { status: "incomplete", instructions: "Fila 1", svg: "<svg/>" },
+    revisions: [{ id: "v1", logicalDocument: { revision: { id: "r1" } } }]
+  };
+  const projectKey = "users/user-1/projects/p1";
+  const reconstructionKey = "users/user-1/patterns/reconstruction-p1";
+  env.documents.set(projectKey, original);
+  await env.service.saveReconstruction("user-1", record, null, original, () => true);
+  assert.deepEqual(await env.service.getPattern("user-1", record.id), record);
+  await assert.rejects(env.service.saveReconstruction("user-1", { ...record, findings: [] }, null, original, () => true), /cambió/i);
+  await assert.rejects(env.service.deleteProject("user-1", "p1", original, null, () => true), /reconstrucciones/i);
+  await assert.rejects(env.service.saveProject("user-1", { ...original, photos: [] }, original, () => true), /fotografías/i);
+  assert.deepEqual(env.documents.get(reconstructionKey), record);
+  assert.deepEqual(env.documents.get(projectKey), original);
+  await assert.rejects(env.service.saveReconstruction("user-1", record, record, original, () => false), /sesión|almacenamiento/i);
+  env.setWriteFailure(true);
+  await assert.rejects(env.service.saveReconstruction("user-1", { ...record, outputs: {} }, record, original, () => true), /write failed/);
+  assert.deepEqual(env.documents.get(reconstructionKey), record);
+
+  const local = localHarness(env.service.sameData);
+  local.stores.projects.set("p1", original);
+  const source = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  const start = source.indexOf("  function saveProject(");
+  const end = source.indexOf("  function escapeHtml(", start);
+  assert.ok(start >= 0 && end > start);
+  const context = {
+    localTransaction: local.run, isCurrentContext: () => true, firebaseService: env.service,
+    STORE_NAME: "projects", PATTERN_STORE_NAME: "patterns", Promise, Array, Error
+  };
+  vm.runInNewContext(source.slice(start, end) + "\nthis.save = saveReconstruction; this.remove = deleteProject; this.edit = saveProject;", context);
+  await context.save(record, null, original, { key: "local" });
+  assert.deepEqual(local.stores.patterns.get(record.id), record);
+  await assert.rejects(context.save(record, null, original, { key: "local" }), /cambió/i);
+  await assert.rejects(context.remove("p1", original, null, { key: "local" }), /cambió/i);
+  await assert.rejects(context.edit({ ...original, photos: [] }, original, { key: "local" }), /cambió/i);
+  assert.deepEqual(local.stores.patterns.get(record.id), record);
+  assert.deepEqual(local.stores.projects.get("p1"), original);
+});

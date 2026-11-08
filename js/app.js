@@ -40,6 +40,7 @@
     projectsPage: document.getElementById("projects-page"),
     catalogPage: document.getElementById("symbol-catalog"),
     diagramPage: document.getElementById("diagram-tool"),
+    reconstructionPage: document.getElementById("reconstruction-tool"),
     currentPageLabel: document.getElementById("current-page-label"),
     symbolFilters: document.getElementById("symbol-filters"),
     symbolSearch: document.getElementById("symbol-search"),
@@ -207,7 +208,13 @@
         }
       });
     }
-    return localTransaction([{ store: STORE_NAME, key: project.id, expected: expected }],
+    const checks = [{ store: STORE_NAME, key: project.id, expected: expected }];
+    if (expected && Array.isArray(expected.photos) && expected.photos.some(function (photo) {
+      return !project.photos.some(function (item) { return item.id === photo.id; });
+    })) {
+      checks.push({ store: PATTERN_STORE_NAME, key: "reconstruction-" + project.id, expected: null });
+    }
+    return localTransaction(checks,
       [{ store: STORE_NAME, value: project }], context);
   }
 
@@ -221,7 +228,8 @@
     const patternId = "pattern-" + projectId;
     return localTransaction([
       { store: STORE_NAME, key: projectId, expected: expected },
-      { store: PATTERN_STORE_NAME, key: patternId, expected: expectedPattern }
+      { store: PATTERN_STORE_NAME, key: patternId, expected: expectedPattern },
+      { store: PATTERN_STORE_NAME, key: "reconstruction-" + projectId, expected: null }
     ], [
       { store: STORE_NAME, key: projectId, remove: true },
       { store: PATTERN_STORE_NAME, key: patternId, remove: true }
@@ -249,6 +257,20 @@
     }
     return localTransaction([{ store: PATTERN_STORE_NAME, key: pattern.id, expected: expected }],
       [{ store: PATTERN_STORE_NAME, value: pattern }], context);
+  }
+
+  function saveReconstruction(reconstruction, expected, expectedProject, context) {
+    if (!isCurrentContext(context)) return Promise.reject(new Error("El almacenamiento cambió. No se ha guardado la reconstrucción."));
+    if (!expectedProject) return Promise.reject(new Error("No se pudo verificar el proyecto."));
+    if (context.key !== "local") {
+      return firebaseService.saveReconstruction(context.key.slice(6), reconstruction, expected, expectedProject, function () {
+        return isCurrentContext(context);
+      });
+    }
+    return localTransaction([
+      { store: STORE_NAME, key: reconstruction.projectId, expected: expectedProject },
+      { store: PATTERN_STORE_NAME, key: reconstruction.id, expected: expected }
+    ], [{ store: PATTERN_STORE_NAME, value: reconstruction }], context);
   }
 
   function escapeHtml(value) {
@@ -746,6 +768,7 @@
         '<span><button class="card-action" type="button" data-action="edit" data-id="' + escapeHtml(project.id) + '">Editar</button>' +
         '<button class="card-action delete" type="button" data-action="delete" data-id="' + escapeHtml(project.id) + '">Eliminar</button></span></div></div></article>';
     }).join("");
+    window.dispatchEvent(new Event("crochelab-projects-changed"));
   }
 
   function refreshProjects() {
@@ -883,15 +906,17 @@
   }
 
   function setView(view) {
-    const activeView = ["projects", "symbols", "diagram"].includes(view) ? view : "projects";
+    const activeView = ["projects", "symbols", "diagram", "reconstruction"].includes(view) ? view : "projects";
     const labels = {
       projects: "Mis proyectos",
       symbols: "Símbolos de croché",
-      diagram: "Boceto visual"
+      diagram: "Boceto visual",
+      reconstruction: "Reconstrucción"
     };
     elements.projectsPage.hidden = activeView !== "projects";
     elements.catalogPage.hidden = activeView !== "symbols";
     elements.diagramPage.hidden = activeView !== "diagram";
+    elements.reconstructionPage.hidden = activeView !== "reconstruction";
     elements.currentPageLabel.textContent = labels[activeView];
     document.title = activeView === "projects"
       ? "CrochéLab — Taller de patrones"
@@ -1170,6 +1195,30 @@
   elements.sketchRows.addEventListener("input", function () {
     updateSketchControls();
     if (getSelectedDiagramProject() && getSelectedStitchIds().length) renderDiagramFromEditor();
+  });
+
+  window.CrocheLabReconstructionBridge = Object.freeze({
+    projects: function () { return projects.slice(); },
+    context: storageContext,
+    isCurrent: isCurrentContext,
+    refresh: refreshProjects,
+    sameData: firebaseService.sameData,
+    projectSnapshot: function (id) { return projectSnapshots.get(id); },
+    get: function (id, context) {
+      if (!isCurrentContext(context)) return Promise.reject(new Error("El almacenamiento cambió."));
+      return getPattern("reconstruction-" + id, context);
+    },
+    save: saveReconstruction,
+    createProject: openNewProject,
+    photoBlob: function (photo) {
+      if (photo.blob instanceof Blob) return Promise.resolve(photo.blob);
+      return firebaseService.ensurePhotoBlob(photo);
+    },
+    editProject: function (id) {
+      const project = projects.find(function (item) { return item.id === id; });
+      if (!project) throw new Error("No se encontró el proyecto.");
+      openEditProject(project);
+    }
   });
 
   if (!symbolLibrary) {
