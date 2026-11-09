@@ -7,3 +7,6 @@ window.CROCHELAB_FIREBASE_CONFIG = {
   messagingSenderId: "346447605427",
   appId: "1:346447605427:web:6db94f762e6b50121d4ac6"
 };
+
+// Clave de sitio publica de reCAPTCHA v3 para App Check (Firebase Console > App Check). No es un secreto.
+window.CROCHELAB_APPCHECK_SITE_KEY = "";

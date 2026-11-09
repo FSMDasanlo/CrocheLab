@@ -1,4 +1,4 @@
-﻿const assert = require("node:assert/strict");
+const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
@@ -46,6 +46,21 @@ vm.runInNewContext(fs.readFileSync(path.join(root, "js", "ai-analysis.js"), "utf
 });
 const ai = windowContext.CrocheLabAI;
 
+// Simula el backend de js/firebase-ai.mjs: traduce respuestas HTTP simuladas a la interfaz del SDK.
+function installBackend() {
+  windowContext.CrocheLabGemini = {
+    generateContent: async function (model, request, signal) {
+      const response = await fetchImpl("sdk:" + model, { body: JSON.stringify(request), signal: signal });
+      if (!response.ok) {
+        const error = new Error("HTTP " + response.status);
+        error.status = response.status;
+        throw error;
+      }
+      return response.json();
+    }
+  };
+}
+
 test("reconstruction findings retain the photo reference and reject fabricated or malformed structure", function () {
   const entry = { kind: "observation", category: "stitch", statement: "Punto visible", confidence: "medium",
     region: { x: 0.1, y: 0.2, width: 0.4, height: 0.5 } };
@@ -58,7 +73,7 @@ test("reconstruction findings retain the photo reference and reject fabricated o
 });
 
 test("automatic synthesis submits findings and expects a structured construction", async function () {
-  windowContext.APP_CONFIG = { geminiApiKey: "test-key" };
+  installBackend();
   let body;
   fetchImpl = function (url, options) {
     body = JSON.parse(options.body);
@@ -71,20 +86,18 @@ test("automatic synthesis submits findings and expects a structured construction
   assert.equal(result.unknowns[0], "No se ve el inicio");
   assert.match(body.contents[0].parts[0].text, /Inicio oculto/);
   assert.equal(body.generationConfig.responseMimeType, "application/json");
-  delete windowContext.APP_CONFIG;
+  delete windowContext.CrocheLabGemini;
 });
 
-test("analysis is disabled until a Gemini API key is configured", async function () {
+test("analysis is disabled until the Firebase AI Logic backend is registered", async function () {
   assert.equal(ai.isConfigured(), false);
   await assert.rejects(ai.analyzePhotos([{}], [{ id: "chain", name: "Cadeneta" }]));
-  windowContext.APP_CONFIG = { geminiApiKey: "TU_GEMINI_API_KEY" };
-  assert.equal(ai.isConfigured(), false);
-  windowContext.APP_CONFIG = { geminiApiKey: "test-key" };
+  installBackend();
   assert.equal(ai.isConfigured(), true);
 });
 
 test("sends up to four photos directly to Gemini and normalizes its JSON response", async function () {
-  windowContext.APP_CONFIG = { geminiApiKey: "test-key" };
+  installBackend();
   let request;
   fetchImpl = function (url, options) {
     request = { url: url, options: options };
@@ -105,8 +118,8 @@ test("sends up to four photos directly to Gemini and normalizes its JSON respons
   const phases = [];
   const result = await ai.analyzePhotos(photos, [{ id: "chain", name: "Cadeneta" }], function (phase) { phases.push(phase); });
   const payload = JSON.parse(request.options.body);
-  assert.match(request.url, /generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-flash-latest:generateContent$/);
-  assert.equal(request.options.headers["x-goog-api-key"], "test-key");
+  assert.equal(request.url, "sdk:gemini-3.5-flash-lite");
+  assert.equal(JSON.stringify(request).includes("key"), false);
   assert.equal(payload.contents[0].parts.length, 5);
   assert.equal(payload.contents[0].parts[1].inlineData.mimeType, "image/png");
   assert.equal(payload.generationConfig.responseMimeType, "application/json");
@@ -116,7 +129,7 @@ test("sends up to four photos directly to Gemini and normalizes its JSON respons
 });
 
 test("reports errors from Gemini instead of returning an empty analysis", async function () {
-  windowContext.APP_CONFIG = { geminiApiKey: "test-key" };
+  installBackend();
   let requests = 0;
   fetchImpl = function () {
     requests += 1;
@@ -133,7 +146,7 @@ test("reports errors from Gemini instead of returning an empty analysis", async 
 });
 
 test("retries a temporary 503 and returns the successful response", async function () {
-  windowContext.APP_CONFIG = { geminiApiKey: "test-key" };
+  installBackend();
   useFakeTimeout = true;
   retryTimers = [];
   let requests = 0;
@@ -161,7 +174,7 @@ test("retries a temporary 503 and returns the successful response", async functi
 });
 
 test("stops after three unavailable responses with a clear error", async function () {
-  windowContext.APP_CONFIG = { geminiApiKey: "test-key" };
+  installBackend();
   useFakeTimeout = true;
   retryTimers = [];
   let requests = 0;
@@ -184,7 +197,7 @@ test("stops after three unavailable responses with a clear error", async functio
 });
 
 test("timeout cancels a pending retry", async function () {
-  windowContext.APP_CONFIG = { geminiApiKey: "test-key" };
+  installBackend();
   useFakeTimeout = true;
   retryTimers = [];
   let requests = 0;
@@ -205,7 +218,7 @@ test("timeout cancels a pending retry", async function () {
 });
 
 test("times out and aborts a Gemini request that does not respond", async function () {
-  windowContext.APP_CONFIG = { geminiApiKey: "test-key" };
+  installBackend();
   useFakeTimeout = true;
   let signal;
   fetchImpl = function (url, options) {
@@ -225,7 +238,7 @@ test("times out and aborts a Gemini request that does not respond", async functi
 });
 
 test("does not send photos if their preparation completes after the timeout", async function () {
-  windowContext.APP_CONFIG = { geminiApiKey: "test-key" };
+  installBackend();
   useFakeTimeout = true;
   let requests = 0;
   fetchImpl = function () { requests += 1; };
@@ -288,8 +301,8 @@ test("normalizeAnalysis accepts border shape for edgings and puntillas", functio
   assert.equal(result.stitches.length, 3);
 });
 
-test("uses custom geminiModel from APP_CONFIG when provided", async function () {
-  windowContext.APP_CONFIG = { geminiApiKey: "test-key", geminiModel: "gemini-3.5-flash-lite" };
+test("uses the configured default model through the Firebase AI Logic backend", async function () {
+  installBackend();
   let requestedUrl = "";
   fetchImpl = function (url) {
     requestedUrl = url;
@@ -303,5 +316,5 @@ test("uses custom geminiModel from APP_CONFIG when provided", async function () 
     });
   };
   await ai.analyzePhotos([{ type: "image/png", data: "Zm90bw==" }], []);
-  assert.match(requestedUrl, /models\/gemini-3\.5-flash-lite:generateContent$/);
+  assert.equal(requestedUrl, "sdk:gemini-3.5-flash-lite");
 });

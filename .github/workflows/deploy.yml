@@ -25,24 +25,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Generate config.js from secrets
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+      # Gemini se usa mediante Firebase AI Logic + App Check: no hay claves de Gemini en el sitio.
+      - name: Build site (public files only)
         run: |
-          python3 - <<'EOF'
-          import json, os
-          key = os.environ.get("GEMINI_API_KEY", "").strip()
-          if not key:
-              raise SystemExit("ERROR: falta configurar el secreto GEMINI_API_KEY en Settings > Secrets and variables > Actions")
-          model = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.5-flash-lite"
-          cfg = {
-              "geminiApiKey": key,
-              "geminiModel": model,
-          }
-          with open("js/config.js", "w", encoding="utf-8") as f:
-              f.write("window.APP_CONFIG = " + json.dumps(cfg) + ";\n")
-          EOF
+          mkdir _site
+          cp -r index.html css js img schemas examples _site/
+          rm -f _site/js/config.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -50,7 +38,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: '_site'
 
       - name: Deploy to GitHub Pages
         id: deployment

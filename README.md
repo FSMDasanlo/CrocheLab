@@ -98,12 +98,48 @@ costuras, uniones entre piezas, motivos recursivos ni repeticiones anidadas.
 Una validación correcta solo certifica coherencia dentro de estas reglas;
 no verifica automáticamente la viabilidad física ni la fidelidad a una prenda.
 
-## Análisis de imágenes con Gemini
+## Análisis de imágenes con Gemini (Firebase AI Logic)
 
-Como en MiDespensa, el navegador envía las imágenes directamente a la API de Gemini.
-Para uso local, copia `js/config.example.js` como `js/config.js` e introduce una
-clave de Gemini válida. El archivo `js/config.js` está excluido de Git.
+El navegador **nunca** recibe una clave de Gemini. CrochéLab llama a Gemini a través de
+**Firebase AI Logic** (`js/firebase-ai.mjs`): la clave vive dentro de Firebase y **App Check**
+(reCAPTCHA v3) hace que solo esta web pueda usarla. GitHub Pages sigue sirviendo la
+aplicación y el workflow de despliegue no usa ningún secreto de Gemini.
 
-La clave es visible para cualquiera que pueda acceder a la aplicación servida.
-No publiques ese archivo ni despliegues la aplicación con la clave: para una web
-pública usa un servidor que la proteja y controle el acceso y el consumo.
+Modelo: `gemini-3.5-flash-lite`. Admite imágenes y respuestas JSON estructuradas con
+Firebase AI Logic y no exige plan de pago. Se cambia en `DEFAULT_GEMINI_MODEL` de `js/ai-analysis.js`.
+
+Si falta la clave de sitio de App Check, el análisis con IA queda desactivado (no hay modo sin protección).
+
+### Configuración de Firebase Console, paso a paso
+
+Proyecto: `crochelab-bd7ee` (https://console.firebase.google.com/project/crochelab-bd7ee).
+
+1. **Activar AI Logic.** Menú *Build → AI Logic → Get started*. Elige **Gemini Developer API**
+   y completa el asistente. Firebase crea y guarda la clave de Gemini por ti; no hay que copiarla en el código.
+   Si el asistente ofrece activar App Check, acepta.
+2. **Crear la clave de reCAPTCHA v3.** Entra en https://www.google.com/recaptcha/admin/create:
+   etiqueta `CrochéLab`, tipo **reCAPTCHA v3**, dominio **`fsmdasanlo.github.io`** únicamente.
+   **No añadas `localhost`**: permitiría usar tu app desde cualquier ordenador. Copia la
+   *clave del sitio* (pública) y la *clave secreta*.
+3. **Registrar la app web en App Check.** *Build → App Check → Apps*, tu app web, proveedor
+   **reCAPTCHA** (v3). Pega la *clave secreta* en Firebase (no en el código) y guarda.
+4. **Poner la clave del sitio en la app.** En `js/firebase-config.js`, rellena
+   `window.CROCHELAB_APPCHECK_SITE_KEY = "…"` con la *clave del sitio* (es pública, no es secreta).
+5. **Hacer obligatorio App Check.** *App Check → pestaña APIs → Firebase AI Logic → Set up*:
+   *Baseline protection = Enforced*. Sin este paso la protección no se aplica.
+6. **Restringir y vigilar.** En Google Cloud Console → *APIs y servicios → Credenciales*, la clave
+   que Firebase creó para Gemini y tu clave web de Firebase deben tener restricciones de API.
+   Revoca cualquier clave de Gemini antigua en https://aistudio.google.com/apikey. Fija cuotas o presupuesto.
+7. **Publicar.** Haz commit y push; el workflow publica la web en GitHub Pages.
+
+### Prueba en local (token de depuración)
+
+1. Sirve la web con un servidor que entregue `.mjs` como JavaScript (por ejemplo la extensión
+   Live Server de VS Code, puerto 5500; `python -m http.server` en Windows no sirve).
+2. Abre `http://localhost:5500`, con la clave del sitio ya rellenada, y mira la consola del navegador:
+   aparece `App Check debug token: …`.
+3. En Firebase Console → *App Check → Apps → tu app web → ⋮ → Manage debug tokens*, añádelo.
+   Se guarda en el navegador y no hay que repetirlo. No lo subas a Git ni lo compartas.
+4. Abre un proyecto con fotos y pulsa analizar. Si responde, todo está correcto.
+
+En producción nunca se activa el token de depuración: solo se usa cuando el host es `localhost` o `127.0.0.1`.

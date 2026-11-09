@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
+  const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
   const MAX_PHOTOS = 4;
   const MAX_IMAGE_SIDE = 1280;
   const ANALYSIS_TIMEOUT_MS = 90000;
@@ -10,13 +10,17 @@
   const CONFIDENCE = ["high", "medium", "low"];
 
   function getGeminiModel() {
-    const custom = window.APP_CONFIG && window.APP_CONFIG.geminiModel;
-    return typeof custom === "string" && custom.trim() ? custom.trim() : DEFAULT_GEMINI_MODEL;
+    return DEFAULT_GEMINI_MODEL;
+  }
+
+  // Lo registra js/firebase-ai.mjs (Firebase AI Logic + App Check); la clave de Gemini nunca llega al navegador.
+  function getBackend() {
+    return window.CrocheLabGemini;
   }
 
   function isConfigured() {
-    const key = window.APP_CONFIG && window.APP_CONFIG.geminiApiKey;
-    return typeof key === "string" && Boolean(key.trim()) && !key.trim().startsWith("TU_");
+    const backend = getBackend();
+    return Boolean(backend && typeof backend.generateContent === "function");
   }
 
   function buildPrompt(stitchCatalog) {
@@ -143,15 +147,13 @@
     function attempt(number) {
       if (signal.aborted) return Promise.reject(new Error("El análisis ha caducado."));
       if (onProgress) onProgress(number === 1 ? "requesting" : "retrying", number);
-      return fetch("https://generativelanguage.googleapis.com/v1beta/models/" + getGeminiModel() + ":generateContent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": window.APP_CONFIG.geminiApiKey.trim() },
-        signal: signal,
-        body: body
-      }).catch(function (error) {
-        if (error instanceof TypeError) {
+      return getBackend().generateContent(getGeminiModel(), JSON.parse(body), signal).then(function (data) {
+        return { ok: true, status: 200, json: function () { return Promise.resolve(data); } };
+      }, function (error) {
+        if (error instanceof TypeError || (error && error.network)) {
           throw new Error("No se pudo conectar con Gemini. Comprueba tu conexión y vuelve a intentarlo.");
         }
+        if (error && Number.isInteger(error.status)) return { ok: false, status: error.status };
         throw error;
       }).then(function (response) {
         if ([500, 502, 503, 504].indexOf(response.status) >= 0 && number < MAX_GEMINI_ATTEMPTS) {
@@ -166,7 +168,7 @@
 
   function analyzePhotos(blobs, stitchCatalog, onProgress) {
     if (!isConfigured()) {
-      return Promise.reject(new Error("Falta la clave de Gemini en js/config.js."));
+      return Promise.reject(new Error("El análisis con IA no está disponible: revisa la configuración de Firebase AI Logic y App Check."));
     }
     if (!blobs.length) return Promise.reject(new Error("El proyecto no tiene fotografías."));
     const validIds = stitchCatalog.map(function (stitch) { return stitch.id; });
@@ -197,7 +199,7 @@
             throw new Error("Gemini no está disponible en este momento (error " + response.status + "). Se ha intentado varias veces; vuelve a probar más tarde.");
           }
           if (response.status === 400 || response.status === 401 || response.status === 403) {
-            throw new Error("Gemini ha rechazado la solicitud (error " + response.status + "). Comprueba la clave y los permisos de la API.");
+            throw new Error("Gemini ha rechazado la solicitud (error " + response.status + "). Comprueba la configuración de Firebase AI Logic y App Check.");
           }
           throw new Error("Gemini ha respondido con el error " + response.status + ". Inténtalo de nuevo.");
         }

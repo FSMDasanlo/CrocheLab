@@ -500,7 +500,7 @@
     const configured = Boolean(aiAnalysis && aiAnalysis.isConfigured());
     elements.aiAnalyzeButton.disabled = !configured || !project || !project.photos.length || aiBusy;
     if (!configured) {
-      elements.aiAnalysisStatus.textContent = "Análisis con IA no conectado: configura la clave de Gemini en js/config.js. Mientras tanto, elige forma y puntos a mano.";
+      elements.aiAnalysisStatus.textContent = "Análisis con IA no conectado: revisa la configuración de Firebase AI Logic y App Check. Mientras tanto, elige forma y puntos a mano.";
     } else if (!project) {
       elements.aiAnalysisStatus.textContent = "Elige un proyecto con fotografías.";
     } else if (!aiBusy) {
@@ -891,7 +891,7 @@
       ? '<div class="analysis-notice"><span aria-hidden="true">✦</span><div><strong>Análisis con IA disponible en el Boceto visual</strong>' +
         '<p>Abre el boceto visual para analizar las fotos con Gemini e identificar automáticamente la silueta y los puntos de croché.</p></div></div>'
       : '<div class="analysis-notice"><span aria-hidden="true">✳</span><div><strong>Análisis con IA no conectado</strong>' +
-        '<p>Configura tu clave de Gemini en <code>js/config.js</code> para analizar fotos. Mientras tanto, puedes preparar el boceto visual marcando los puntos a mano.</p></div></div>';
+        '<p>Revisa la configuración de Firebase AI Logic y App Check para analizar fotos. Mientras tanto, puedes preparar el boceto visual marcando los puntos a mano.</p></div></div>';
     const diagramActionLabel = isAiReady ? "Abrir boceto y analizar con IA" : "Crear boceto visual";
 
     elements.projectDetail.innerHTML = '<div class="detail-content"><div class="detail-top"><div>' +

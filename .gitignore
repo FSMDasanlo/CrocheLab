@@ -1,2 +1,46 @@
 js/config.js
 node_modules/
+
+# Entorno y credenciales
+.env
+.env.*
+!.env.example
+*.env
+.firebaserc
+.firebase/
+firebase-debug.log*
+*.pem
+*.key
+*.p12
+*.pfx
+service-account*.json
+*credentials*.json
+*secret*.json
+.secrets/
+
+# Configuracion local privada
+js/config.js
+js/config.local.js
+*.local.js
+*.local.json
+
+# Temporales, copias de seguridad y registros
+*.log
+npm-debug.log*
+*.bak
+*.backup
+*.orig
+*.tmp
+*.swp
+~$*
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+
+# Compilacion y publicacion
+dist/
+build/
+coverage/
+
+_site/
